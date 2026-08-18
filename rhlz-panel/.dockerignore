@@ -1,0 +1,11 @@
+node_modules
+dist
+.data
+backups
+.cache
+.npm
+test
+docs
+*.log
+.git
+.gitignore

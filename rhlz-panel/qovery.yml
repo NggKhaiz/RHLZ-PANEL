@@ -1,0 +1,10 @@
+# Qovery — RHLZ Panel
+application:
+  name: raven-hub
+  build_mode: DOCKER
+  dockerfile_path: Dockerfile
+  environment_variables:
+    NODE_ENV: production
+  ports:
+    - port: 6767
+      protocol: HTTP

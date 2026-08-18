@@ -1,0 +1,29 @@
+services:
+  panel:
+    build: .
+    image: raven-hub:latest
+    container_name: raven-hub
+    restart: unless-stopped
+    ports:
+      - "6767:6767"
+    environment:
+      NODE_ENV: production
+      PORT: 6767
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      JWT_EXPIRES: ${JWT_EXPIRES:-24h}
+      PANEL_CORS_ORIGINS: ${PANEL_CORS_ORIGINS:-}
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
+      MUTATION_LIMIT: ${MUTATION_LIMIT:-1000}
+    volumes:
+      - panel-data:/app/.data
+    mem_limit: 256m
+    memswap_limit: 256m
+    cpus: 1.0
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:6767/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+volumes:
+  panel-data:

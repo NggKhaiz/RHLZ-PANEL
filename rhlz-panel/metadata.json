@@ -1,0 +1,8 @@
+{
+  "name": "RHLZ Panel",
+  "description": "A web-based game server management panel with file manager, terminal access, tunnels, and a jailed multi-language code sandbox.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

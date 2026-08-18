@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: raven-hub
+    runtime: node
+    plan: free
+    buildCommand: npm ci --no-audit --no-fund && npm run build
+    startCommand: node dist/server.cjs
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "10000"
+      - key: JWT_SECRET
+        generateValue: true

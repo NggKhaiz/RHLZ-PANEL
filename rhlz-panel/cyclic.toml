@@ -1,0 +1,4 @@
+# Cyclic.sh — RHLZ Panel
+# Build & start are inferred from package.json; Cyclic injects $PORT.
+env:
+  NODE_ENV: production
