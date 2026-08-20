@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { PANEL_UI_NAME } from "../brand";
+import softwareCatalog from "../software.json";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import axios from "axios";
@@ -95,28 +96,21 @@ const RAM = [
 ];
 const CPU_MAP: Record<number, number> = {1:100,2:100,4:150,8:200,16:300,24:400,32:500,48:700,64:800};
 
-const MINECRAFT_SOFTWARE = [
-  {id:'paper',name:'Paper',desc:'High Performance',icon: Zap},
-  {id:'spigot',name:'Spigot',desc:'Classic Plugins',icon: Wrench},
-  {id:'fabric',name:'Fabric',desc:'Lightweight Mods',icon: Feather},
-  {id:'forge',name:'Forge',desc:'Classic Modpack',icon: Wrench},
-  {id:'bungeecord',name:'BungeeCord',desc:'Classic Proxy',icon: Network},
-  {id:'velocity',name:'Velocity',desc:'Next-gen Proxy',icon: FastForward}
-];
-
-const APPLICATION_SOFTWARE = [
-  { id: 'nodejs', name: 'Node.js', desc: 'JS / TS runtime — bots, APIs, apps', icon: Code2, image: 'node:20-alpine', startup: 'node index.js' },
-  { id: 'python', name: 'Python', desc: 'Python 3.x runtime & scripts', icon: TerminalSquare, image: 'python:3.12-slim', startup: 'python3 main.py' },
-  { id: 'go', name: 'Go', desc: 'Go binaries & services', icon: Rocket, image: 'golang:1.23-alpine', startup: 'go run main.go' },
-  { id: 'rust', name: 'Rust', desc: 'Rust services via cargo', icon: Cpu, image: 'rust:1.82-slim', startup: 'cargo run --release' },
-  { id: 'cpp', name: 'C / C++', desc: 'Compile & run C/C++ apps', icon: FileCode2, image: 'gcc:14', startup: 'g++ -O2 -o app main.cpp && ./app' },
-  { id: 'csharp', name: 'C# (.NET)', desc: '.NET console & web apps', icon: Boxes, image: 'mcr.microsoft.com/dotnet/sdk:8.0', startup: 'dotnet run' },
-  { id: 'ruby', name: 'Ruby', desc: 'Ruby apps & scripts', icon: Gem, image: 'ruby:3.3-slim', startup: 'ruby main.rb' },
-  { id: 'php', name: 'PHP', desc: 'PHP web apps & workers', icon: Terminal, image: 'php:8.3-cli', startup: 'php -S 0.0.0.0:$PORT' },
-  { id: 'bash', name: 'Bash', desc: 'Shell scripts & tooling', icon: FileTerminal, image: 'bash:5', startup: 'bash main.sh' }
-];
-
-const SOFTWARE = [...MINECRAFT_SOFTWARE, ...APPLICATION_SOFTWARE];
+const ICON_BY_FAMILY: Record<string, any> = {
+  minecraft: Zap, proxy: Network, bedrock: Gamepad2, game: Gamepad2, app: Code2,
+};
+const CATALOG = (softwareCatalog as any).types.map((t: any) => ({
+  ...t,
+  desc: t.description,
+  icon: ICON_BY_FAMILY[t.family] || Code2,
+  image: t.defaultImage,
+  startup: t.defaultStartup,
+}));
+const MINECRAFT_SOFTWARE = CATALOG.filter((s: any) => s.family === "minecraft");
+const PROXY_SOFTWARE = CATALOG.filter((s: any) => s.family === "proxy");
+const BEDROCK_SOFTWARE = CATALOG.filter((s: any) => s.family === "bedrock");
+const APPLICATION_SOFTWARE = CATALOG.filter((s: any) => s.family === "app" || s.family === "game");
+const SOFTWARE = CATALOG;
 
 const STEPS = ['IDENTITY','RESOURCES','ACCESS','SOFTWARE','REVIEW'];
 
@@ -216,27 +210,26 @@ export default function CreateServer() {
   const [portStatus, setPortStatus] = useState('idle'); // 'idle', 'checking', 'used', 'available', 'invalid', 'error'
   const portCheckIdRef = useRef(0);
   
-  const [softwareCategory, setSoftwareCategory] = useState<'minecraft' | 'other'>('minecraft');
+  const [softwareCategory, setSoftwareCategory] = useState<'minecraft' | 'proxy' | 'bedrock' | 'apps'>('minecraft');
   const [state, setState] = useState({
     name: '', desc: '', ram: 4, cpu: 150, disk: 10, ip: '', port: 25565, runtimeType: 'docker', 
     owner: user?.id || '', node: '', software: 'paper', version: 'latest', auto: true
   });
 
-  const handleCategoryChange = (cat: 'minecraft' | 'other') => {
+  const handleCategoryChange = (cat: 'minecraft' | 'proxy' | 'bedrock' | 'apps') => {
     setSoftwareCategory(cat);
-    if (cat === 'minecraft') {
-      if (!MINECRAFT_SOFTWARE.some(s => s.id === state.software)) {
-        updateState('software', 'paper');
-        if (state.port === 3000 || state.port === 8000 || state.port === 8080) {
-          updateState('port', 25565);
-        }
-      }
-    } else {
-      if (!APPLICATION_SOFTWARE.some(s => s.id === state.software)) {
-        updateState('software', 'nodejs');
-        if (state.port === 25565) {
-          updateState('port', 3000);
-        }
+    const lists: Record<string, any[]> = {
+      minecraft: MINECRAFT_SOFTWARE,
+      proxy: PROXY_SOFTWARE,
+      bedrock: BEDROCK_SOFTWARE,
+      apps: APPLICATION_SOFTWARE,
+    };
+    const list = lists[cat] || MINECRAFT_SOFTWARE;
+    if (!list.some((s: any) => s.id === state.software)) {
+      const first = list[0];
+      if (first) {
+        updateState('software', first.id);
+        updateState('port', first.defaultPort);
       }
     }
   };
@@ -470,10 +463,7 @@ export default function CreateServer() {
       try {
         const checkRes = await axios.get("/api/servers");
         if (Array.isArray(checkRes.data)) {
-          const match = checkRes.data.find((s: any) => 
-            (s.name === state.name || Number(s.port) === Number(state.port)) &&
-            (Date.now() - new Date(s.createdAt || 0).getTime() < 120000)
-          );
+          const match = checkRes.data.find((s: any) => s.id && s.name === state.name);
           if (match) {
             markSuccessAndRedirect();
           }
@@ -484,7 +474,7 @@ export default function CreateServer() {
     }, 2500);
 
     try {
-      const appRuntime = APPLICATION_SOFTWARE.find((a) => a.id === state.software);
+      const appRuntime = CATALOG.find((a: any) => a.id === state.software);
       const payload = {
         name: state.name,
         description: state.desc,
@@ -498,10 +488,15 @@ export default function CreateServer() {
         ownerId: state.owner || user?.id,
         runtimeType: state.runtimeType,
         nodeId: state.node,
-        ...(appRuntime ? { dockerImage: appRuntime.image, startupCommand: appRuntime.startup } : {})
+        ...(appRuntime?.family === "app" || appRuntime?.family === "bedrock" ? { dockerImage: appRuntime.image, startupCommand: appRuntime.startup } : {})
       };
-      await axios.post("/api/servers", payload, { timeout: 60000 });
-      markSuccessAndRedirect();
+      const created = await axios.post("/api/servers", payload, { timeout: 60000 });
+      const createdId = created.data?.id;
+      if (createdId) {
+        markSuccessAndRedirect();
+      } else {
+        markSuccessAndRedirect();
+      }
     } catch (e: any) {
       if (isCompleted) return;
       if (deployTimerRef.current) clearInterval(deployTimerRef.current);
@@ -894,7 +889,7 @@ export default function CreateServer() {
                           <div className="min-w-0 flex-1">
                             <div className="font-display font-bold text-sm text-white flex items-center gap-2">
                               Minecraft Server
-                              {softwareCategory === 'minecraft' && (
+                              {(softwareCategory === 'minecraft' || softwareCategory === 'proxy' || softwareCategory === 'bedrock') && (
                                 <span className="text-[9px] bg-theme-600 text-white px-1.5 py-0.5 rounded font-mono uppercase">
                                   Selected
                                 </span>
@@ -909,8 +904,8 @@ export default function CreateServer() {
 
                       <button
                         type="button"
-                        onClick={() => handleCategoryChange('other')}
-                        className={`sel-card p-4 text-left transition-all ${softwareCategory === 'other' ? 'selected' : ''}`}
+                        onClick={() => handleCategoryChange('apps')}
+                        className={`sel-card p-4 text-left transition-all ${softwareCategory === 'apps' ? 'selected' : ''}`}
                       >
                         <span className="tick"><Check className="w-3 h-3 stroke-[3]" /></span>
                         <div className="flex items-start gap-3">
@@ -920,7 +915,7 @@ export default function CreateServer() {
                           <div className="min-w-0 flex-1">
                             <div className="font-display font-bold text-sm text-white flex items-center gap-2">
                               Application & Script Runtime
-                              {softwareCategory === 'other' && (
+                              {softwareCategory === 'apps' && (
                                 <span className="text-[9px] bg-amber-500 text-black px-1.5 py-0.5 rounded font-mono uppercase font-bold">
                                   Selected
                                 </span>
@@ -936,7 +931,7 @@ export default function CreateServer() {
                   </div>
 
                   {/* DISPLAY MINECRAFT ENGINES & FEATURES */}
-                  {softwareCategory === 'minecraft' && (
+                  {(softwareCategory === 'minecraft' || softwareCategory === 'proxy' || softwareCategory === 'bedrock') && (
                     <div className="space-y-6 pt-2">
                       <div>
                         <div className="flex items-center gap-3 mb-4">
@@ -949,7 +944,7 @@ export default function CreateServer() {
                         </div>
                         
                         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-                          {MINECRAFT_SOFTWARE.map(s => {
+                          {(softwareCategory === 'proxy' ? PROXY_SOFTWARE : softwareCategory === 'bedrock' ? BEDROCK_SOFTWARE : MINECRAFT_SOFTWARE).map((s: any) => {
                             const Icon = s.icon;
                             return (
                               <button 
@@ -1003,7 +998,7 @@ export default function CreateServer() {
                   )}
 
                   {/* DISPLAY APPLICATION & SCRIPT RUNTIMES */}
-                  {softwareCategory === 'other' && (
+                  {softwareCategory === 'apps' && (
                     <div className="space-y-6 pt-2">
                       <div>
                         <div className="flex items-center gap-3 mb-4">
@@ -1016,7 +1011,7 @@ export default function CreateServer() {
                         </div>
                         
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          {APPLICATION_SOFTWARE.map(s => {
+                          {APPLICATION_SOFTWARE.map((s: any) => {
                             const Icon = s.icon;
                             return (
                               <button 
@@ -1100,7 +1095,7 @@ export default function CreateServer() {
                         {(user?.role === "admin" || user?.role === "owner") && renderReviewRow('OWNER ID', state.owner || '—')}
                         {(user?.role === "admin" || user?.role === "owner") && renderReviewRow('NODE ID', state.node || '—')}
                         {renderReviewRow('WORKLOAD TYPE', softwareCategory === 'minecraft' ? 'Minecraft Game Server' : 'Application & Script Runtime')}
-                        {renderReviewRow('SOFTWARE', SOFTWARE.find(s => s.id === state.software)?.name || 'Unknown')}
+                        {renderReviewRow('SOFTWARE', SOFTWARE.find((s: any) => s.id === state.software)?.name || 'Unknown')}
                         {renderReviewRow('VERSION', state.version || 'latest')}
                         
                         <div className="px-4 py-4">

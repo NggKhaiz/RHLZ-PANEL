@@ -9,6 +9,8 @@ const execAsync = promisify(exec);
 import { panelEvents } from "../events.js"; // Import socket for logs
 import { readJSON } from "./db.js";
 import { downloadJar } from "./jarDownloader.js";
+import { signRequest } from "../utils/hmac.js";
+import { serverDirDiskGb } from "../utils/diskUsage.js";
 
 const getSocketPath = () => {
   if (process.platform === 'win32') return '//./pipe/docker_engine';
@@ -86,6 +88,11 @@ export const getDocker = async (nodeId?: string) => {
     });
     const originalDial = d.modem.dial;
     d.modem.dial = function(options: any, callback: any) {
+      const date = new Date().toISOString();
+      const reqPath = String(options.path || "/").split("?")[0];
+      options.headers = options.headers || {};
+      options.headers["X-RHLZ-Date"] = date;
+      options.headers["X-RHLZ-Sign"] = signRequest(node.key, options.method || "GET", reqPath, date, "");
       if (process.env.DEBUG_DOCKER === "1") {
       console.log("[Docker Request] " + options.method + " " + options.path);
       console.log("[Docker Outgoing URL] " + (d.modem as any).protocol + "://" + (d.modem as any).host + ":" + (d.modem as any).port + options.path);
@@ -644,20 +651,23 @@ export const getContainerStatus = async (containerId: string, nodeId?: string) =
   }
 };
 
-export const getContainerStats = async (containerId: string, nodeId?: string) => {
+export const getContainerStats = async (containerId: string, nodeId?: string, serverId?: string) => {
   const docker = await getDocker(nodeId);
+  const diskId = serverId || String(containerId || "").replace("mock-container-id-", "");
   if (isNodeSandbox(nodeId)) {
-    const id = containerId.replace("mock-container-id-", "");
+    const id = diskId;
     if (!mockState[id]) return { cpu: 0, ram: 0, disk: 0 };
     
     // Stable pseudo-random mock stats based on time so it fluctuates realistically
     const timeSec = Math.floor(Date.now() / 5000);
     const floatPseudo = (Math.sin(timeSec + id.charCodeAt(0)) + 1) / 2; // 0 to 1
     
+    const diskGb = await serverDirDiskGb(id);
     return {
       cpu: floatPseudo * 10 + 2, // 2% to 12%
       ram: 600 + (floatPseudo * 50 - 25), // ~600 MB
-      disk: 2.1
+      disk: diskGb,
+      sandbox: true
     };
   }
   try {
@@ -687,10 +697,11 @@ export const getContainerStats = async (containerId: string, nodeId?: string) =>
     } catch(e) {}
 
     // Roughly calculate disk size from the volume directory if possible, or provide a default for now.
+    const diskGb = await serverDirDiskGb(diskId);
     return {
       cpu: cpuPercent,
       ram: ramMB,
-      disk: 2.1
+      disk: diskGb
     };
   } catch (e) {
     return { cpu: 0, ram: 0, disk: 0 };

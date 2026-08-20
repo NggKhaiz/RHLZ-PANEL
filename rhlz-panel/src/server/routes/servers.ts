@@ -74,7 +74,7 @@ router.get("/:id/playit", async (req, res) => {
   const server = servers.find((s: any) => s.id === id);
   if (!server) return res.status(404).json({ error: "Server not found" });
   if (server.runtimeType === "local") {
-    return res.json({ status: "stopped", claimLink: null, logs: "Playit integration is Beta/Coming Soon for Local Process runtime." });
+    return res.json({ status: "unavailable", claimLink: null, logs: "Playit is not available for local-process servers." });
   }
   const serverName = server ? server.name.replace(/[^a-zA-Z0-9_-]/g, "_") : id;
   const pm2Name = `playit_${serverName}`;
@@ -120,7 +120,7 @@ router.post("/:id/playit/start", async (req, res) => {
   const server = servers.find((s: any) => s.id === id);
   if (!server) return res.status(404).json({ error: "Server not found" });
   if (server.runtimeType === "local") {
-    return res.status(400).json({ error: "Playit integration is Beta/Coming Soon for Local Process runtime." });
+    return res.status(400).json({ error: "Playit is not available for local-process servers." });
   }
   const serverName = server ? server.name.replace(/[^a-zA-Z0-9_-]/g, "_") : id;
   const pm2Name = `playit_${serverName}`;
@@ -151,7 +151,7 @@ router.post("/:id/playit/stop", async (req, res) => {
   const server = servers.find((s: any) => s.id === id);
   if (!server) return res.status(404).json({ error: "Server not found" });
   if (server.runtimeType === "local") {
-    return res.status(400).json({ error: "Playit integration is Beta/Coming Soon for Local Process runtime." });
+    return res.status(400).json({ error: "Playit is not available for local-process servers." });
   }
   const serverName = server ? server.name.replace(/[^a-zA-Z0-9_-]/g, "_") : id;
   const pm2Name = `playit_${serverName}`;
@@ -173,7 +173,7 @@ router.post("/:id/playit/reset", async (req, res) => {
   const server = servers.find((s: any) => s.id === id);
   if (!server) return res.status(404).json({ error: "Server not found" });
   if (server.runtimeType === "local") {
-    return res.status(400).json({ error: "Playit integration is Beta/Coming Soon for Local Process runtime." });
+    return res.status(400).json({ error: "Playit is not available for local-process servers." });
   }
   const serverName = server ? server.name.replace(/[^a-zA-Z0-9_-]/g, "_") : id;
   const pm2Name = `playit_${serverName}`;

@@ -70,7 +70,7 @@ export const getServerRuntimeStats = async (server: any) => {
   if (server.runtimeType === "local") {
     return await getLocalServerStats(server.id);
   }
-  return await getContainerStats(server.containerId, server.nodeId);
+  return await getContainerStats(server.containerId, server.nodeId, server.id);
 };
 
 export const getServerRuntimeLogs = async (server: any) => {

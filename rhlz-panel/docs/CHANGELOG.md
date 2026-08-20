@@ -1,6 +1,7 @@
 # RHLZ — CHANGELOG (cumulative ledger)
 
-## 3.1.0 — One-click + consistency + HIGH security
+## 3.1.0 — One-click + consistency + HIGH security + LOOP-20
+- `src/software.json` catalog; CreateServer families; jar sources for Purpur/Folia/Velocity fill; HMAC node sign; disk `du` cache; Playit local honesty; pocketmine + java app types.
 - Unattended installer (`install.sh --yes`), `update.sh --yes`, `uninstall.sh --yes [--purge]`, `scripts/one-click.sh`.
 - PM2 name `rhlz-panel`; secrets `RHLZ_SESSION_SECRET`; version `3.1.0` from `src/brand.ts`.
 - isMain guard; crash log `.data/logs/crash.log`; Vite `allowedHosts` true; compose `rhlz-panel`.

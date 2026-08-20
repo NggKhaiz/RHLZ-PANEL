@@ -15,6 +15,7 @@ import { getLocalProcessInfo } from "../services/local.js";
 import { createSftpUser, deleteSftpUser } from "../services/sftp.js";
 import { downloadJar } from "../services/jarDownloader.js";
 import { isMinecraftSoftware } from "../services/minecraft.js";
+import { isKnownSoftware, getSoftware } from "../services/softwareCatalog.js";
 import crypto from "crypto";
 import fs from "fs-extra";
 import path from "path";
@@ -175,6 +176,10 @@ export const createServer = async (req: Request, res: Response) => {
     res.status(400).json({ error: "Missing required fields (name, ram, port)" });
     return;
   }
+  if (type && !isKnownSoftware(String(type))) {
+    return res.status(400).json({ error: "Unknown software type" });
+  }
+  const catalogEntry = type ? getSoftware(String(type)) : undefined;
   const ramNum = Number(ram);
   const portNum = Number(port);
   // UI sends cpuLimit/diskLimit; accept both spellings (backward compatible).
@@ -222,8 +227,8 @@ export const createServer = async (req: Request, res: Response) => {
     type: type || "PAPER",
     version: version || "latest",
     theme: theme || "default",
-    dockerImage: dockerImage || "",
-    startupCommand: startupCommand || "",
+    dockerImage: dockerImage || catalogEntry?.defaultImage || "",
+    startupCommand: startupCommand || catalogEntry?.defaultStartup || "",
     status: "installing",
     createdAt: new Date().toISOString(),
     containerId: null as string | null,
@@ -288,7 +293,7 @@ export const createServer = async (req: Request, res: Response) => {
           console.warn("[createServer] Initial JAR download notice:", err?.message || err);
         });
       }
-      await fs.chmod(serverDir, 0o777).catch(() => {});
+      await fs.chmod(serverDir, 0o750).catch(() => {});
     }
   } catch (seedErr) {
     console.warn("Failed to pre-seed starter files:", seedErr);
@@ -420,7 +425,7 @@ export const startServer = async (req: Request, res: Response) => {
     try {
       const serverDir = path.join(process.cwd(), ".data", "servers", server.id);
       await fs.ensureDir(serverDir);
-      await fs.chmod(serverDir, 0o777).catch(() => {});
+      await fs.chmod(serverDir, 0o750).catch(() => {});
       
       const targetType = (server.type || "PAPER").toUpperCase();
       const isGeneric = ["NODEJS", "NODE", "PYTHON", "PYTHON3"].includes(targetType);
@@ -445,10 +450,10 @@ export const startServer = async (req: Request, res: Response) => {
         if (!fs.existsSync(propsPath)) {
           await fs.writeFile(propsPath, `server-port=${server.port}\nmotd=${server.name || "A Minecraft Server"}\n`);
         }
-        await fs.chmod(eulaPath, 0o777).catch(() => {});
-        await fs.chmod(propsPath, 0o777).catch(() => {});
+        await fs.chmod(eulaPath, 0o750).catch(() => {});
+        await fs.chmod(propsPath, 0o750).catch(() => {});
         if (fs.existsSync(jarPath)) {
-          await fs.chmod(jarPath, 0o777).catch(() => {});
+          await fs.chmod(jarPath, 0o750).catch(() => {});
         }
       }
       
@@ -797,14 +802,14 @@ export const redownloadJar = async (req: Request, res: Response) => {
 
   const serverDir = path.join(process.cwd(), ".data", "servers", id);
   await fs.ensureDir(serverDir);
-  await fs.chmod(serverDir, 0o777).catch(() => {});
+  await fs.chmod(serverDir, 0o750).catch(() => {});
   const jarPath = path.join(serverDir, "server.jar");
 
   try {
     const { panelEvents } = await import("../events.js");
     panelEvents.emit("log", id, `[RHLZ] Downloading ${server.type} (${server.version || "latest"}) server JAR...\r\n`);
     await downloadJar(server.type, server.version || "latest", jarPath);
-    await fs.chmod(jarPath, 0o777).catch(() => {});
+    await fs.chmod(jarPath, 0o750).catch(() => {});
     
     const eulaPath = path.join(serverDir, "eula.txt");
     if (!fs.existsSync(eulaPath)) {
@@ -814,8 +819,8 @@ export const redownloadJar = async (req: Request, res: Response) => {
     if (!fs.existsSync(propsPath)) {
       await fs.writeFile(propsPath, `server-port=${server.port}\nmotd=${server.name || "A Minecraft Server"}\n`);
     }
-    await fs.chmod(eulaPath, 0o777).catch(() => {});
-    await fs.chmod(propsPath, 0o777).catch(() => {});
+    await fs.chmod(eulaPath, 0o750).catch(() => {});
+    await fs.chmod(propsPath, 0o750).catch(() => {});
 
     // If server is on Docker and not currently running, refresh the container
     if (server.runtimeType !== "local" && server.containerId) {

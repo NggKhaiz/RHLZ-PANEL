@@ -6,11 +6,12 @@ import { exec } from "child_process";
 import axios from "axios";
 import { downloadJar } from "./jarDownloader.js";
 import { panelEvents } from "../events.js";
+import { parseArgv } from "../utils/argv.js";
 
 const execAsync = promisify(exec);
 const processes = new Map<string, ChildProcess>();
 
-function scrubbedEnv(extra: Record<string, string>): NodeJS.ProcessEnv {
+export function scrubbedEnv(extra: Record<string, string>): NodeJS.ProcessEnv {
   return {
     PATH: process.env.PATH || "/usr/bin:/bin",
     HOME: process.env.HOME || "/tmp",

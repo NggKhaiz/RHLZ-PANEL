@@ -67,3 +67,9 @@ denylist; re-verified live (guest `env` shows only the four vars; `process.env`
 and `/proc/self` probes are blocked; python still runs). All other probes
 (headers, CORS, IDOR ×9 endpoints, traversal ×5 vectors, rate limit, webhook,
 SSRF, CSRF, 2FA, XSS, secrets, zip-slip) returned clean.
+
+## 9 · LOOP-20 / 3.1.0 (2026-08-20)
+
+- Tests: `npm test` (hmac, catalog, scrub, power 409, prior suite). Do not invent disk MB here — re-measure on a production `npm ci --omit=dev` tree.
+- One-click: `install.sh --yes` documented; PM2 `rhlz-panel`; `RHLZ_SESSION_SECRET`; no `if (true)` boot; no `RCON_PASSWORD=admin`.
+- Residual: extract-zip GHSA (app-layer). HMAC node signing is implemented.

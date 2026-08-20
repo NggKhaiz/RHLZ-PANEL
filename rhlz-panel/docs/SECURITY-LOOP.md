@@ -58,3 +58,6 @@ One honest row per hardening iteration. Local static analysis, unit tests, and g
 | 52 | identity | Google auth | POST /api/auth/google trusted client googleId/email. | HIGH | Require ID token + tokeninfo verify; insecure flag only off-prod. | unit/lint | — | — | — |
 | 53 | secrets | RCON + spawn env + webhook query | RCON=admin; local spawn leaked process.env; webhook `?secret=`. | HIGH | Per-server RCON; scrubbed env; query secret dropped. | grep + tests | — | — | — |
 | 54 | appsec | node agent | Node 18, CORS *, pm2 startup systemd, key printed twice. | HIGH | Node 22, CORS deny-by-default, HMAC headers, cron persist, print key once. | bash -n | — | — | — |
+| 55 | identity | HMAC node | WONTFIX HMAC reopened | MED | X-RHLZ-Date/Sign + unit tests | npm test | — | — | — |
+| 56 | appsec | catalog + spawn | unknown types; quoted argv | LOW | isKnownSoftware 400; parseArgv | npm test | — | — | — |
+| 57 | pentest | LOOP-20 pass C | headers/CSRF/SSRF/sandbox still green | NONE | ledger + PENTEST append | npm test | — | — | — |

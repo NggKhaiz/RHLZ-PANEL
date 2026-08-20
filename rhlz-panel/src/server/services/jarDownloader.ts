@@ -2,13 +2,16 @@ import fs from "fs-extra";
 import path from "path";
 import axios from "axios";
 import { pipeline } from "stream/promises";
+import { assertSafeDownloadUrl } from "../utils/ssrf.js";
 
 const DEFAULT_HEADERS = {
-  "User-Agent": "RHLZPanel/1.0.0 (https://github.com/NggKhaiz/RHLZ-PANEL)",
-  "Accept": "*/*"
+  "User-Agent": "RHLZPanel/3.1.0 (https://github.com/NggKhaiz/RHLZ-PANEL)",
+  Accept: "*/*",
 };
 
 const pipeDownloadToFile = async (url: string, tempPath: string): Promise<boolean> => {
+  const ssrf = await assertSafeDownloadUrl(url);
+  if (!ssrf.ok) return false;
   try {
     const response = await axios({
       method: "GET",
@@ -16,29 +19,56 @@ const pipeDownloadToFile = async (url: string, tempPath: string): Promise<boolea
       responseType: "stream",
       headers: DEFAULT_HEADERS,
       timeout: 60000,
-      maxRedirects: 8
+      maxRedirects: 8,
     });
-
-    if (response.status !== 200) {
-      return false;
-    }
-
+    if (response.status !== 200) return false;
     const writer = fs.createWriteStream(tempPath);
     await pipeline(response.data, writer);
-
     const stat = await fs.stat(tempPath);
-    // Ensure the downloaded jar is a valid binary (> 500 KB)
-    if (stat.size > 500 * 1024) {
-      return true;
-    } else {
-      await fs.remove(tempPath).catch(() => {});
-      return false;
-    }
-  } catch (err: any) {
+    if (stat.size > 500 * 1024) return true;
+    await fs.remove(tempPath).catch(() => {});
+    return false;
+  } catch {
     await fs.remove(tempPath).catch(() => {});
     return false;
   }
 };
+
+async function paperFill(project: string, version: string): Promise<string[]> {
+  const urls: string[] = [];
+  try {
+    const paperMeta = await axios.get(
+      `https://fill.papermc.io/v3/projects/${project}/versions/${version}/builds/latest`,
+      { headers: DEFAULT_HEADERS, timeout: 8000 }
+    );
+    const dlUrl = paperMeta.data?.downloads?.["server:default"]?.url || paperMeta.data?.downloads?.application?.url;
+    if (dlUrl) urls.push(dlUrl);
+  } catch {}
+  try {
+    const buildsList = await axios.get(
+      `https://fill.papermc.io/v3/projects/${project}/versions/${version}/builds`,
+      { headers: DEFAULT_HEADERS, timeout: 8000 }
+    );
+    if (Array.isArray(buildsList.data) && buildsList.data.length > 0) {
+      const latestBuild = buildsList.data[0];
+      const dlUrl = latestBuild?.downloads?.["server:default"]?.url || latestBuild?.downloads?.application?.url;
+      if (dlUrl) urls.push(dlUrl);
+    }
+  } catch {}
+  return urls;
+}
+
+async function latestFillVersion(project: string): Promise<string | null> {
+  try {
+    const res = await axios.get(`https://fill.papermc.io/v3/projects/${project}`, {
+      headers: DEFAULT_HEADERS,
+      timeout: 8000,
+    });
+    const versions = res.data?.versions;
+    if (Array.isArray(versions) && versions.length) return String(versions[versions.length - 1]);
+  } catch {}
+  return null;
+}
 
 export const downloadJar = async (type: string, version: string, destPath: string): Promise<void> => {
   const normType = (type || "paper").toLowerCase().trim();
@@ -48,67 +78,62 @@ export const downloadJar = async (type: string, version: string, destPath: strin
   }
 
   const tempPath = `${destPath}.tmp.${Date.now()}`;
-  console.log(`[JarDownloader] Request to download ${normType} (${normVersion}) -> ${destPath}`);
-
-  // Build ordered list of candidate download URLs
   const urls: string[] = [];
 
-  if (normType === "bungeecord" || normType === "waterfall") {
-    urls.push(
-      "https://ci.md-5.net/job/BungeeCord/lastSuccessfulBuild/artifact/bootstrap/target/BungeeCord.jar",
-      "https://hub.spigotmc.org/jenkins/job/BungeeCord/lastSuccessfulBuild/artifact/bootstrap/target/BungeeCord.jar"
-    );
-  } else if (normType === "velocity") {
-    // Fill v3 API for Velocity
-    try {
-      const veloMeta = await axios.get(`https://fill.papermc.io/v3/projects/velocity/versions/3.4.0-SNAPSHOT/builds/latest`, {
-        headers: DEFAULT_HEADERS,
-        timeout: 8000
-      });
-      const dlUrl = veloMeta.data?.downloads?.["server:default"]?.url || veloMeta.data?.downloads?.application?.url;
-      if (dlUrl) {
-        urls.push(dlUrl);
-      }
-    } catch (e) {}
-    try {
-      const veloMetaOld = await axios.get(`https://fill.papermc.io/v3/projects/velocity/versions/3.3.0-SNAPSHOT/builds/latest`, {
-        headers: DEFAULT_HEADERS,
-        timeout: 8000
-      });
-      const dlUrl = veloMetaOld.data?.downloads?.["server:default"]?.url || veloMetaOld.data?.downloads?.application?.url;
-      if (dlUrl) {
-        urls.push(dlUrl);
-      }
-    } catch (e) {}
+  if (normType === "bungeecord") {
     urls.push(
       "https://ci.md-5.net/job/BungeeCord/lastSuccessfulBuild/artifact/bootstrap/target/BungeeCord.jar"
     );
+  } else if (normType === "waterfall") {
+    urls.push(...(await paperFill("waterfall", "latest")).concat(await paperFill("waterfall", normVersion)));
+  } else if (normType === "velocity") {
+    const ver = (await latestFillVersion("velocity")) || normVersion;
+    urls.push(...(await paperFill("velocity", ver)));
+  } else if (normType === "purpur") {
+    urls.push(`https://api.purpurmc.org/v2/purpur/${normVersion}/latest/download`);
+  } else if (normType === "folia") {
+    urls.push(...(await paperFill("folia", normVersion)));
+  } else if (normType === "quilt") {
+    try {
+      const meta = await axios.get(`https://meta.quiltmc.org/v3/versions/loader/${normVersion}`, {
+        headers: DEFAULT_HEADERS,
+        timeout: 10000,
+      });
+      const loader = Array.isArray(meta.data) && meta.data[0]?.loader?.version;
+      if (loader) {
+        urls.push(`https://meta.quiltmc.org/v3/versions/loader/${normVersion}/${loader}/profile/json`);
+      }
+    } catch {}
+    urls.push(...(await paperFill("paper", normVersion)));
+  } else if (normType === "neoforge") {
+    urls.push(`https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml`);
+    urls.push(...(await paperFill("paper", normVersion)));
   } else if (normType === "forge") {
-    // Official Forge maven links & fallback
-    const forgePromoVer = normVersion === "1.20.1" ? "47.3.0" : (normVersion === "1.19.2" ? "43.3.0" : (normVersion === "1.18.2" ? "40.2.0" : (normVersion === "1.16.5" ? "36.2.39" : (normVersion === "1.12.2" ? "14.23.5.2860" : "latest"))));
-    urls.push(
-      `https://maven.minecraftforge.net/net/minecraftforge/forge/${normVersion}-${forgePromoVer}/forge-${normVersion}-${forgePromoVer}-installer.jar`,
-      `https://maven.minecraftforge.net/net/minecraftforge/forge/${normVersion}-${forgePromoVer}/forge-${normVersion}-${forgePromoVer}-universal.jar`
-    );
+    const forgePromoVer =
+      normVersion === "1.20.1" ? "47.3.0" : normVersion === "1.19.2" ? "43.3.0" : "latest";
+    if (forgePromoVer !== "latest") {
+      urls.push(
+        `https://maven.minecraftforge.net/net/minecraftforge/forge/${normVersion}-${forgePromoVer}/forge-${normVersion}-${forgePromoVer}-installer.jar`
+      );
+    }
   } else if (normType === "fabric") {
     try {
       const metaRes = await axios.get(`https://meta.fabricmc.net/v2/versions/loader/${normVersion}`, {
         headers: DEFAULT_HEADERS,
-        timeout: 10000
+        timeout: 10000,
       });
       if (Array.isArray(metaRes.data) && metaRes.data.length > 0) {
         const loaderVer = metaRes.data[0].loader?.version || "0.16.10";
-        const installerVer = "1.0.1";
-        urls.push(`https://meta.fabricmc.net/v2/versions/loader/${normVersion}/${loaderVer}/${installerVer}/server/jar`);
+        urls.push(`https://meta.fabricmc.net/v2/versions/loader/${normVersion}/${loaderVer}/1.0.1/server/jar`);
       }
-    } catch (e) {
+    } catch {
       urls.push(`https://meta.fabricmc.net/v2/versions/loader/${normVersion}/0.16.10/1.0.1/server/jar`);
     }
   } else if (normType === "vanilla") {
     try {
       const manifestRes = await axios.get("https://piston-meta.mojang.com/mc/game/version_manifest_v2.json", {
         headers: DEFAULT_HEADERS,
-        timeout: 8000
+        timeout: 8000,
       });
       const versionsList = manifestRes.data?.versions;
       if (Array.isArray(versionsList)) {
@@ -116,77 +141,35 @@ export const downloadJar = async (type: string, version: string, destPath: strin
         if (targetEntry?.url) {
           const versionPackage = await axios.get(targetEntry.url, { headers: DEFAULT_HEADERS, timeout: 8000 });
           const serverUrl = versionPackage.data?.downloads?.server?.url;
-          if (serverUrl) {
-            urls.push(serverUrl);
-          }
+          if (serverUrl) urls.push(serverUrl);
         }
       }
-    } catch (e) {}
-  } else if (normType === "spigot") {
-    urls.push(
-      `https://download.getbukkit.org/spigot/spigot-${normVersion}.jar`
-    );
-  }
-
-  // Primary & fallback for Paper (and default for any unknown/custom paper request) using Fill v3 API
-  try {
-    const paperMeta = await axios.get(`https://fill.papermc.io/v3/projects/paper/versions/${normVersion}/builds/latest`, {
-      headers: DEFAULT_HEADERS,
-      timeout: 8000
-    });
-    const dlUrl = paperMeta.data?.downloads?.["server:default"]?.url || paperMeta.data?.downloads?.application?.url;
-    if (dlUrl) {
-      urls.push(dlUrl);
-    }
-  } catch (e) {}
-
-  // Fallback: list all builds for version and pick the highest build id
-  try {
-    const buildsList = await axios.get(`https://fill.papermc.io/v3/projects/paper/versions/${normVersion}/builds`, {
-      headers: DEFAULT_HEADERS,
-      timeout: 8000
-    });
-    if (Array.isArray(buildsList.data) && buildsList.data.length > 0) {
-      const latestBuild = buildsList.data[0];
-      const dlUrl = latestBuild?.downloads?.["server:default"]?.url || latestBuild?.downloads?.application?.url;
-      if (dlUrl && !urls.includes(dlUrl)) {
-        urls.push(dlUrl);
-      }
-    }
-  } catch (e) {}
-
-  // Fallback: 1.21.1 latest stable build if specific version query failed
-  if (normVersion !== "1.21.1") {
-    try {
-      const fallbackMeta = await axios.get(`https://fill.papermc.io/v3/projects/paper/versions/1.21.1/builds/latest`, {
-        headers: DEFAULT_HEADERS,
-        timeout: 8000
-      });
-      const dlUrl = fallbackMeta.data?.downloads?.["server:default"]?.url || fallbackMeta.data?.downloads?.application?.url;
-      if (dlUrl && !urls.includes(dlUrl)) {
-        urls.push(dlUrl);
-      }
-    } catch (e) {}
+    } catch {}
+  } else if (normType === "spigot" || normType === "bukkit") {
+    urls.push(`https://download.getbukkit.org/spigot/spigot-${normVersion}.jar`);
+  } else if (normType === "mohist" || normType === "arclight") {
+    urls.push(...(await paperFill("paper", normVersion)));
+  } else if (normType === "custom") {
+    throw new Error("Custom type requires an uploaded server.jar");
+  } else {
+    urls.push(...(await paperFill("paper", normVersion)));
   }
 
   let success = false;
   let lastErr = "";
   for (const candidateUrl of urls) {
+    if (!candidateUrl.startsWith("http")) continue;
     try {
-      console.log(`[JarDownloader] Attempting candidate URL: ${candidateUrl}`);
       const ok = await pipeDownloadToFile(candidateUrl, tempPath);
       if (ok) {
         await fs.ensureDir(path.dirname(destPath));
         await fs.move(tempPath, destPath, { overwrite: true });
-        await fs.chmod(destPath, 0o777).catch(() => {});
-        const finalStat = await fs.stat(destPath);
-        console.log(`[JarDownloader] Successfully downloaded ${normType} (${(finalStat.size / (1024 * 1024)).toFixed(2)} MB)`);
+        await fs.chmod(destPath, 0o640).catch(() => {});
         success = true;
         break;
       }
     } catch (err: any) {
       lastErr = err?.message || String(err);
-      console.warn(`[JarDownloader] URL failed: ${candidateUrl} - ${lastErr}`);
     }
   }
 

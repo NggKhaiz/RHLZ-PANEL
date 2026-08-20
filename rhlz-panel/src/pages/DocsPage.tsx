@@ -36,7 +36,7 @@ export default function DocsPage() {
           </h2>
           <div className="space-y-4">
             <Step n="1" title="Install on Linux (no systemd)">
-              <code className="rounded bg-black/40 px-1.5 py-0.5 font-mono text-[11px] text-theme-300">bash install.sh</code> —
+              <code className="rounded bg-black/40 px-1.5 py-0.5 font-mono text-[11px] text-theme-300">bash install.sh --yes --runtime docker --admin admin:ChangeMe_now</code> —
               installs Node, deps, builds the panel, and registers <span className="font-mono">pm2</span> with a
               <span className="font-mono"> @reboot</span> cron for boot persistence. Docker/PaaS users can skip to step 3.
             </Step>

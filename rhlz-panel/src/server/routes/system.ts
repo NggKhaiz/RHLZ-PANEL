@@ -14,6 +14,12 @@ const router = express.Router();
 
 router.use(requireAuth);
 
+import { SOFTWARE_TYPES } from "../services/softwareCatalog.js";
+
+router.get("/software", async (_req, res) => {
+  res.json(SOFTWARE_TYPES);
+});
+
 router.get("/versions", async (req, res) => {
   const type = (req.query.type as string) || "PAPER";
   const versions = await getVersions(type);
