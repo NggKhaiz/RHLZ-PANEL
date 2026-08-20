@@ -263,7 +263,37 @@ export const changePassword = async (req: Request, res: Response) => {
 };
 
 export const googleLogin = async (req: Request, res: Response) => {
-  const { email, googleId, name, photoURL } = req.body;
+  const { email, googleId, name, photoURL, idToken, credential } = req.body;
+
+  const googleIdToken = idToken || credential;
+  const insecure = process.env.GOOGLE_AUTH_INSECURE === "1" && process.env.NODE_ENV !== "production";
+  if (!insecure) {
+    if (!googleIdToken || typeof googleIdToken !== "string") {
+      res.status(401).json({
+        error: "Google Sign-In requires a verified ID token. Set GOOGLE_AUTH_INSECURE=1 only for local development.",
+      });
+      return;
+    }
+    try {
+      const { default: axios } = await import("axios");
+      const info = await axios.get("https://oauth2.googleapis.com/tokeninfo", {
+        params: { id_token: googleIdToken },
+        timeout: 8000,
+      });
+      const aud = process.env.GOOGLE_CLIENT_ID;
+      if (aud && info.data?.aud !== aud) {
+        res.status(401).json({ error: "Google token audience mismatch" });
+        return;
+      }
+      if (!info.data?.email || (email && info.data.email.toLowerCase() !== String(email).toLowerCase())) {
+        res.status(401).json({ error: "Google token email mismatch" });
+        return;
+      }
+    } catch {
+      res.status(401).json({ error: "Google ID token verification failed" });
+      return;
+    }
+  }
 
   if (!email) {
     res.status(400).json({ error: "Google email is required" });

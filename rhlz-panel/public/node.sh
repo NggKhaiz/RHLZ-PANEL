@@ -1,190 +1,224 @@
 #!/bin/bash
-# Node Installer Script for RHLZ Panel
-# This script sets up a remote node for the panel
+# RHLZ node agent installer (rhlz-node). --yes for non-interactive.
+# Persistence: pm2 + @reboot cron. Does not use systemd.
+
+set -euo pipefail
 
 PORT=6768
 CF_TOKEN=""
+YES=0
+ALLOWED_ORIGIN="${RHLZ_NODE_CORS:-}"
 
-while [[ "$#" -gt 0 ]]; do
+while [[ $# -gt 0 ]]; do
     case $1 in
         -p|--port) PORT="$2"; shift ;;
         -c|--cf-token) CF_TOKEN="$2"; shift ;;
-        *) echo "Unknown parameter passed: $1"; exit 1 ;;
+        --yes|-y) YES=1 ;;
+        --cors) ALLOWED_ORIGIN="$2"; shift ;;
+        --help|-h)
+            echo "Usage: bash node.sh [--yes] [-p PORT] [--cors ORIGIN] [-c CF_TOKEN]"
+            exit 0
+            ;;
+        *) echo "Unknown parameter: $1"; exit 1 ;;
     esac
     shift
 done
 
 echo "======================================"
-echo "    RHLZ Node Setup Script        "
-echo "    (rhlz-node agent)                 "
+echo "    RHLZ Node Setup (rhlz-node)"
 echo "======================================"
 
-# Check for root
-if [ "$EUID" -ne 0 ]; then 
+if [ "${EUID:-$(id -u)}" -ne 0 ]; then
   echo "Please run as root"
-  exit
+  exit 1
 fi
 
-# Install Docker if not present
-if ! command -v docker &> /dev/null; then
+if ! command -v docker &>/dev/null; then
     echo "[+] Installing Docker..."
     curl -fsSL https://get.docker.com -o get-docker.sh
     sh get-docker.sh
     rm get-docker.sh
+    service docker start 2>/dev/null || true
 else
     echo "[+] Docker is already installed."
 fi
 
-# Install Node.js if not present
-if ! command -v node &> /dev/null; then
-    echo "[+] Installing Node.js..."
-    curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
-    apt-get install -y nodejs
+need_node=0
+if ! command -v node &>/dev/null; then
+    need_node=1
 else
-    echo "[+] Node.js is already installed."
+    ver=$(node -v | cut -d'.' -f1 | tr -d 'v')
+    if [ "$ver" -lt 20 ]; then need_node=1; fi
+fi
+if [ "$need_node" -eq 1 ]; then
+    echo "[+] Installing Node.js 22..."
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+    apt-get install -y nodejs
 fi
 
-# Install PM2 if not present
-if ! command -v pm2 &> /dev/null; then
+if ! command -v pm2 &>/dev/null; then
     echo "[+] Installing PM2..."
     npm install -g pm2
 fi
 
-# Setup Agent Directory
 AGENT_DIR=/opt/rhlz-node
 mkdir -p "$AGENT_DIR"
 cd "$AGENT_DIR"
 
-# Create package.json
 cat << 'PKGEOF' > package.json
 {
   "name": "rhlz-node",
-  "version": "1.0.0",
+  "version": "3.1.0",
   "description": "RHLZ node agent",
   "main": "agent.js",
   "dependencies": {
     "express": "^4.18.2",
     "http-proxy-middleware": "^2.0.6",
-    "cors": "^2.8.5",
     "dotenv": "^16.4.5"
   }
 }
 PKGEOF
 
-# Create agent.js
 cat << 'AGENTEOF' > agent.js
 require('dotenv').config({ path: __dirname + '/.env' });
 const express = require('express');
 const { createProxyMiddleware } = require('http-proxy-middleware');
-const cors = require('cors');
 const fs = require('fs');
+const crypto = require('crypto');
 
 const app = express();
-app.use(cors());
+app.disable('x-powered-by');
 
-// Health check endpoint (public, unauthenticated)
-app.get('/health', (req, res) => {
-  console.log('[GET /health] Health check requested');
-  res.status(200).json({
-    ok: true,
-    service: "rhlz-node",
-    status: "online"
-  });
+const allowedOrigin = process.env.CORS_ORIGIN || '';
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (!origin) return next();
+  if (allowedOrigin && origin === allowedOrigin) {
+    res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
+    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-RHLZ-Date, X-RHLZ-Sign');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+    if (req.method === 'OPTIONS') return res.status(204).end();
+    return next();
+  }
+  return res.status(403).json({ error: 'CORS denied' });
 });
 
-// Auth Middleware (constant-time NODE_KEY comparison)
-const crypto = require('crypto');
+app.get('/health', (req, res) => {
+  res.status(200).json({ ok: true, service: 'rhlz-node', status: 'online' });
+});
+
 function safeEqual(a, b) {
   const ba = Buffer.from(String(a));
   const bb = Buffer.from(String(b));
   if (ba.length !== bb.length) return false;
   return crypto.timingSafeEqual(ba, bb);
 }
+
+function verifyHmac(req) {
+  const date = req.headers['x-rhlz-date'];
+  const sign = req.headers['x-rhlz-sign'];
+  if (!date || !sign || !process.env.NODE_KEY) return false;
+  const ts = Date.parse(String(date));
+  if (!Number.isFinite(ts) || Math.abs(Date.now() - ts) > 5 * 60 * 1000) return false;
+  const body = req.rawBody ? crypto.createHash('sha256').update(req.rawBody).digest('hex') : crypto.createHash('sha256').update('').digest('hex');
+  const payload = `${req.method}\n${req.path}\n${date}\n${body}`;
+  const expected = crypto.createHmac('sha256', process.env.NODE_KEY).update(payload).digest('hex');
+  return safeEqual(String(sign), expected);
+}
+
+app.use(express.json({
+  limit: '2mb',
+  verify: (req, _res, buf) => { req.rawBody = buf; }
+}));
+
+const hits = new Map();
 app.use((req, res, next) => {
-  const auth = req.headers.authorization;
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+  const now = Date.now();
+  const rec = hits.get(ip) || { n: 0, t: now };
+  if (now - rec.t > 60000) { rec.n = 0; rec.t = now; }
+  rec.n += 1;
+  hits.set(ip, rec);
+  if (rec.n > 120) return res.status(429).send('Too many requests');
+  next();
+});
+
+app.use((req, res, next) => {
   if (!process.env.NODE_KEY) {
-    console.error('Missing NODE_KEY in environment');
     return res.status(500).send('Node key not configured properly.');
   }
+  if (verifyHmac(req)) return next();
+  const auth = req.headers.authorization;
   if (!auth || !safeEqual(auth, 'Bearer ' + process.env.NODE_KEY)) {
-    console.error('Invalid token authentication attempt');
     return res.status(401).send('Unauthorized');
   }
   next();
 });
 
-// Proxy to local Docker daemon
-const socketPath = process.platform === 'win32' ? '//./pipe/docker_engine' : '/var/run/docker.sock';
-
-if (!fs.existsSync(socketPath) && process.platform !== 'win32') {
+const socketPath = '/var/run/docker.sock';
+if (!fs.existsSync(socketPath)) {
   console.error(`Warning: Docker socket not found at ${socketPath}`);
 }
 
-console.log(`Configuring proxy target socketPath: ${socketPath}`);
-
 app.use('/', createProxyMiddleware({
-  target: {
-    host: 'localhost',
-    protocol: 'http:',
-    socketPath: socketPath
-  },
+  target: { host: 'localhost', protocol: 'http:', socketPath: socketPath },
   changeOrigin: true
 }));
 
 const PORT = process.env.PORT || 6768;
-console.log('   /\\_/\\');
-console.log('  ((@v@))     RHLZ');
-console.log('  ():::()     rhlz-node agent');
-console.log('   VV-VV');
-console.log('© 2026 RHLZ. All rights reserved.');
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`rhlz-node agent listening on port ${PORT}`);
 });
 AGENTEOF
 
 echo "[+] Installing agent dependencies..."
-npm install
+npm install --omit=dev --no-audit --no-fund
 
-# Generate a random 32-character key
-NODE_KEY=$(head -c 32 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 32)
+EXISTING_KEY=""
+if [ -f .env ]; then
+  EXISTING_KEY=$(grep -E '^NODE_KEY=' .env | head -1 | cut -d= -f2- || true)
+fi
+if [ -n "$EXISTING_KEY" ]; then
+  NODE_KEY="$EXISTING_KEY"
+else
+  NODE_KEY=$(head -c 32 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 32)
+fi
 
-echo "NODE_KEY=$NODE_KEY" > .env
-echo "PORT=$PORT" >> .env
+umask 077
+{
+  echo "NODE_KEY=$NODE_KEY"
+  echo "PORT=$PORT"
+  echo "CORS_ORIGIN=$ALLOWED_ORIGIN"
+} > .env
+chmod 600 .env
 
-echo "[+] Starting Node Agent..."
+echo "[+] Starting rhlz-node..."
 pm2 stop rhlz-node 2>/dev/null || true
 pm2 delete rhlz-node 2>/dev/null || true
 pm2 start agent.js --name rhlz-node
 pm2 save
-pm2 startup | tail -n 1 > pm2-startup.sh
-chmod +x pm2-startup.sh
-./pm2-startup.sh
 
-IP_ADDR=$(curl -s ifconfig.me || echo "YOUR_VPS_IP")
+if command -v crontab &>/dev/null; then
+  ( crontab -l 2>/dev/null | grep -v "pm2 resurrect" ; echo "@reboot $(command -v pm2) resurrect" ) | crontab - 2>/dev/null || true
+fi
+
+IP_ADDR=$(curl -s --max-time 4 ifconfig.me || echo "YOUR_VPS_IP")
 
 if [ -n "$CF_TOKEN" ]; then
-    echo "[+] Cloudflare Tunnel token provided. Installing cloudflared..."
-    if ! command -v cloudflared &> /dev/null; then
+    echo "[+] Installing cloudflared..."
+    if ! command -v cloudflared &>/dev/null; then
       curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
       dpkg -i cloudflared.deb
       rm cloudflared.deb
-    else
-      echo "[+] Cloudflared is already installed."
     fi
-    echo "[+] Starting Cloudflare Tunnel service..."
-    cloudflared service install $CF_TOKEN
+    cloudflared service install "$CF_TOKEN" || true
 fi
 
 echo "======================================"
-echo "    Node Setup Complete!              "
+echo "    Node Setup Complete"
 echo "======================================"
-echo "Use the following details in your Panel to connect this node:"
-echo ""
 echo "  IP Address : $IP_ADDR"
-if [ -n "$CF_TOKEN" ]; then
-echo "  Cloudflare : Yes (HTTP Domain mapped in your Zero Trust dashboard to http://localhost:$PORT)"
-fi
 echo "  Port       : $PORT"
 echo "  Node Key   : $NODE_KEY"
-echo ""
+echo "  Health     : http://$IP_ADDR:$PORT/health"
 echo "======================================"

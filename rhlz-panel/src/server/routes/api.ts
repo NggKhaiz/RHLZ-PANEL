@@ -1,7 +1,7 @@
 import express from "express";
 import crypto from "crypto";
 import { readJSON } from "../services/db.js";
-import { PRODUCT_NAME, PANEL_UI_NAME } from "../../brand.js";
+import { PRODUCT_NAME, PANEL_UI_NAME, VERSION } from "../../brand.js";
 import { requireAuth } from "../middleware/auth.js";
 import { createRunLimiter } from "../middleware/rateLimit.js";
 import { runGuestCode } from "../controllers/run.js";
@@ -10,7 +10,7 @@ import { exec } from "child_process";
 const router = express.Router();
 
 router.get("/health", (req, res) => {
-  res.json({ status: "ok", product: PRODUCT_NAME, panel: PANEL_UI_NAME, version: "3.2.0" });
+  res.json({ status: "ok", product: PRODUCT_NAME, panel: PANEL_UI_NAME, version: VERSION });
 });
 
 // Liveness / readiness probes (PaaS health checks; public, no auth).
@@ -55,20 +55,16 @@ router.post("/webhook/github-update", async (req, res) => {
 
   const hubSignature = req.headers["x-hub-signature-256"];
   const webhookSecret = req.headers["x-webhook-secret"];
-  const querySecret = req.query.secret;
 
   let valid = false;
 
   if (typeof hubSignature === "string") {
-    // GitHub: "sha256=<hex hmac of raw body>"
     const provided = hubSignature.trim();
     const rawBody = (req as any).rawBody || Buffer.alloc(0);
     const expected = "sha256=" + crypto.createHmac("sha256", configuredSecret).update(rawBody).digest("hex");
     valid = safeEqual(provided, expected);
   } else if (typeof webhookSecret === "string") {
     valid = safeEqual(webhookSecret, configuredSecret);
-  } else if (typeof querySecret === "string") {
-    valid = safeEqual(querySecret, configuredSecret);
   }
 
   if (!valid) {

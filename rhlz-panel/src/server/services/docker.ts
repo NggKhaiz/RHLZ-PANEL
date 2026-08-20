@@ -1,6 +1,7 @@
 import Docker from "dockerode";
 import fs from "fs-extra";
 import path from "path";
+import crypto from "crypto";
 import { exec } from "child_process";
 import { promisify } from "util";
 const execAsync = promisify(exec);
@@ -85,8 +86,10 @@ export const getDocker = async (nodeId?: string) => {
     });
     const originalDial = d.modem.dial;
     d.modem.dial = function(options: any, callback: any) {
+      if (process.env.DEBUG_DOCKER === "1") {
       console.log("[Docker Request] " + options.method + " " + options.path);
       console.log("[Docker Outgoing URL] " + (d.modem as any).protocol + "://" + (d.modem as any).host + ":" + (d.modem as any).port + options.path);
+      }
       const originalCb = callback;
       const newCb = (err: any, data: any) => {
         if (err) {
@@ -270,7 +273,7 @@ export const createServerContainer = async (serverData: any, nodeId?: string) =>
   const serverDir = path.join(process.cwd(), ".data", "servers", serverData.id);
   const containerBindPath = isLocal ? serverDir : `/opt/rhlz-node/servers/${serverData.id}`;
   await fs.ensureDir(serverDir);
-  await fs.chmod(serverDir, 0o777).catch(() => {});
+  await fs.chmod(serverDir, 0o750).catch(() => {});
 
   // Pre-seed Minecraft eula and properties immediately, and initiate JAR download in background
   if (isMc) {
@@ -282,8 +285,8 @@ export const createServerContainer = async (serverData: any, nodeId?: string) =>
     if (!fs.existsSync(propsPath)) {
       await fs.writeFile(propsPath, `server-port=${serverData.port}\nmotd=${serverData.name || "A Minecraft Server"}\n`);
     }
-    await fs.chmod(eulaPath, 0o777).catch(() => {});
-    await fs.chmod(propsPath, 0o777).catch(() => {});
+    await fs.chmod(eulaPath, 0o640).catch(() => {});
+    await fs.chmod(propsPath, 0o640).catch(() => {});
 
     const jarPath = path.join(serverDir, "server.jar");
     if (!fs.existsSync(jarPath)) {
@@ -356,13 +359,13 @@ export const createServerContainer = async (serverData: any, nodeId?: string) =>
       `MEMORY=${serverData.ram || 2}G`,
       `INIT_MEMORY=256M`,
       `SERVER_PORT=${serverData.port || 25565}`,
-      `UID=0`,
-      `GID=0`,
+      `UID=${process.getuid?.() ?? 1000}`,
+      `GID=${process.getgid?.() ?? 1000}`,
       `EULA=TRUE`,
       `ONLINE_MODE=FALSE`,
       `USE_AIKAR_FLAGS=true`,
       `ENABLE_RCON=true`,
-      `RCON_PASSWORD=admin`,
+      `RCON_PASSWORD=${serverData.rconPassword || crypto.randomBytes(16).toString("hex")}`,
       `RCON_PORT=25575`,
       `OVERRIDE_SERVER_PROPERTIES=true`,
       `FORCE_REDOWNLOAD=false`,
@@ -535,7 +538,7 @@ export const startContainer = async (containerId: string, nodeId?: string) => {
     if (server) {
       const serverDir = path.join(process.cwd(), ".data", "servers", server.id);
       await fs.ensureDir(serverDir);
-      await fs.chmod(serverDir, 0o777).catch(() => {});
+      await fs.chmod(serverDir, 0o750).catch(() => {});
       
       const type = (server.type || "PAPER").toUpperCase();
       const isGeneric = ["NODEJS", "NODE", "PYTHON", "PYTHON3"].includes(type);
@@ -558,10 +561,10 @@ export const startContainer = async (containerId: string, nodeId?: string) => {
         if (!fs.existsSync(propsPath)) {
           await fs.writeFile(propsPath, `server-port=${server.port}\nmotd=${server.name || "A Minecraft Server"}\n`);
         }
-        await fs.chmod(eulaPath, 0o777).catch(() => {});
-        await fs.chmod(propsPath, 0o777).catch(() => {});
+        await fs.chmod(eulaPath, 0o640).catch(() => {});
+        await fs.chmod(propsPath, 0o640).catch(() => {});
         if (fs.existsSync(jarPath)) {
-          await fs.chmod(jarPath, 0o777).catch(() => {});
+          await fs.chmod(jarPath, 0o640).catch(() => {});
         }
       }
       

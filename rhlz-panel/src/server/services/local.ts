@@ -9,6 +9,17 @@ import { panelEvents } from "../events.js";
 
 const execAsync = promisify(exec);
 const processes = new Map<string, ChildProcess>();
+
+function scrubbedEnv(extra: Record<string, string>): NodeJS.ProcessEnv {
+  return {
+    PATH: process.env.PATH || "/usr/bin:/bin",
+    HOME: process.env.HOME || "/tmp",
+    TMPDIR: process.env.TMPDIR || "/tmp",
+    LANG: process.env.LANG || "C.UTF-8",
+    JAVA_HOME: process.env.JAVA_HOME || "",
+    ...extra,
+  };
+}
 const localStartedAt = new Map<string, string>();
 const activeStreams = new Set<string>();
 
@@ -338,12 +349,11 @@ export const startLocalServer = async (id: string, serverData: any) => {
       logMessage(`Executing custom startup command: ${serverData.startupCommand.trim()}`);
       child = spawn(bin, args, {
         cwd: serverPath,
-        env: {
-          ...process.env,
+        env: scrubbedEnv({
           PORT: String(serverData.port || 3000),
           SERVER_PORT: String(serverData.port || 3000),
-          NODE_ENV: "production"
-        },
+          NODE_ENV: "production",
+        }),
         stdio: ["pipe", "pipe", "pipe"]
       });
     } else {
@@ -393,12 +403,11 @@ export const startLocalServer = async (id: string, serverData: any) => {
       logMessage(`Starting Node.js application (${entry}) on port ${serverData.port || 3000}...`);
       child = spawn(nodeBin, [entry], {
         cwd: serverPath,
-        env: {
-          ...process.env,
+        env: scrubbedEnv({
           PORT: String(serverData.port || 3000),
           SERVER_PORT: String(serverData.port || 3000),
-          NODE_ENV: "production"
-        },
+          NODE_ENV: "production",
+        }),
         stdio: ["pipe", "pipe", "pipe"]
       });
     }
@@ -412,12 +421,11 @@ export const startLocalServer = async (id: string, serverData: any) => {
       logMessage(`Executing custom startup command: ${serverData.startupCommand.trim()}`);
       child = spawn(bin, args, {
         cwd: serverPath,
-        env: {
-          ...process.env,
+        env: scrubbedEnv({
           PORT: String(serverData.port || 8000),
           SERVER_PORT: String(serverData.port || 8000),
-          PYTHONUNBUFFERED: "1"
-        },
+          PYTHONUNBUFFERED: "1",
+        }),
         stdio: ["pipe", "pipe", "pipe"]
       });
     } else {
@@ -453,12 +461,11 @@ export const startLocalServer = async (id: string, serverData: any) => {
       logMessage(`Starting Python application (${entry}) on port ${serverData.port || 8000}...`);
       child = spawn(pythonBin, ["-u", entry], {
         cwd: serverPath,
-        env: {
-          ...process.env,
+        env: scrubbedEnv({
           PORT: String(serverData.port || 8000),
           SERVER_PORT: String(serverData.port || 8000),
-          PYTHONUNBUFFERED: "1"
-        },
+          PYTHONUNBUFFERED: "1",
+        }),
         stdio: ["pipe", "pipe", "pipe"]
       });
     }
@@ -471,11 +478,10 @@ export const startLocalServer = async (id: string, serverData: any) => {
       logMessage(`Executing generic startup command: ${serverData.startupCommand.trim()}`);
       child = spawn(bin, args, {
         cwd: serverPath,
-        env: {
-          ...process.env,
+        env: scrubbedEnv({
           PORT: String(serverData.port || 3000),
-          SERVER_PORT: String(serverData.port || 3000)
-        },
+          SERVER_PORT: String(serverData.port || 3000),
+        }),
         stdio: ["pipe", "pipe", "pipe"]
       });
     } else {

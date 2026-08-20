@@ -1,4 +1,4 @@
-name: raven-hub
+name: rhlz-panel
 services:
   - name: web
     type: web

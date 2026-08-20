@@ -1,35 +1,20 @@
 #!/usr/bin/env bash
+# RHLZ Panel installer — production one-click + short interactive menu.
+# Zero prompts when stdin is not a TTY, or --yes / RHLZ_NONINTERACTIVE=1.
 
-# ==============================================================================
+set -euo pipefail
 
-#   R H L Z   P A N E L
-#   Compact control plane for game servers and jailed code runtimes.
-#   © 2026 RHLZ. All rights reserved.
-#
-#  Product Name : RHLZ PANEL
-#  Panel Banner : RHLZ PANEL
-#  Version      : v3.0
-#  Creator      : RHLZ
-#  Repo: https://github.com/NggKhaiz/RHLZ-PANEL.git
-# ==============================================================================
-
-set -e
-
-# Panel Core Configuration
 PANEL_TITLE="RHLZ PANEL"
 PANEL_SUBTITLE="RHLZ Panel"
 PANEL_AUTHOR="RHLZ"
-PANEL_VERSION="3.0"
+PANEL_VERSION="3.1.0"
 DEFAULT_PROD_PORT=6767
 DEFAULT_DEV_PORT=30000
 REPO_URL="https://github.com/NggKhaiz/RHLZ-PANEL.git"
+PM2_NAME="rhlz-panel"
 
-# High-Contrast Deep ANSI Palette
 C_RESET='\033[0m'
 C_BOLD='\033[1m'
-C_DIM='\033[2m'
-
-# Foreground Colors
 C_DEEP_BLUE='\033[38;5;33m'
 C_VIBRANT_CYAN='\033[38;5;45m'
 C_ELECTRIC_PURPLE='\033[38;5;141m'
@@ -39,191 +24,186 @@ C_ROSE='\033[38;5;204m'
 C_CRIMSON='\033[38;5;196m'
 C_WHITE='\033[38;5;255m'
 C_MUTED='\033[38;5;244m'
-
-# Background Badges
-BG_CYAN='\033[48;5;31;38;5;255m'
 BG_GREEN='\033[48;5;28;38;5;255m'
 BG_AMBER='\033[48;5;208;38;5;232m'
-BG_RED='\033[48;5;160;38;5;255m'
-BG_PURPLE='\033[48;5;93;38;5;255m'
+
+NONINTERACTIVE=0
+DEV_MODE=0
+SELECTED_RUNTIME="${RHLZ_RUNTIME:-docker}"
+SELECTED_THEME="${RHLZ_THEME:-red}"
+TARGET_PORT="${RHLZ_PORT:-}"
+ADMIN_USER="${RHLZ_ADMIN_USER:-}"
+ADMIN_PASS="${RHLZ_ADMIN_PASS:-}"
+NO_JAVA=0
+NO_DOCKER=0
+SKIP_BUILD=0
+BIND_ADDR="0.0.0.0"
+RUNTIME_LOCKED="true"
+PROJECT_DIR=""
+SHOW_HELP=0
 
 print_banner() {
-    clear
     echo -e "${C_VIBRANT_CYAN}${C_BOLD}"
-        echo "██████╗  █████╗ ██╗   ██╗███████╗███╗   ██╗    ██╗  ██╗██╗   ██╗██████╗"
+    echo "██████╗  █████╗ ██╗   ██╗███████╗███╗   ██╗    ██╗  ██╗██╗   ██╗██████╗"
     echo "██╔══██╗██╔══██╗██║   ██║██╔════╝████╗  ██║    ██║  ██║██║   ██║██╔══██╗"
     echo "██████╔╝███████║██║   ██║█████╗  ██╔██╗ ██║    ███████║██║   ██║██████╔╝"
     echo "██╔══██╗██╔══██║╚██╗ ██╔╝██╔══╝  ██║╚██╗██║    ██╔══██║██║   ██║██╔══██╗"
     echo "██║  ██║██║  ██║ ╚████╔╝ ███████╗██║ ╚████║    ██║  ██║╚██████╔╝██████╔╝"
-    echo "╚═╝  ╚═╝╚═╝  ╚═╝  ╚═══╝  ╚══════╝╚═╝  ╚═══╝    ╚═╝  ╚═╝ ╚═════╝ ╚═════╝"
+    echo "╚═╝  ╚═╝╚═╝  ╚═╝  ╚═══╝  ╚══════╝╚═╝  ╚═══╝    ╚═╝  ╚═╝ ╚════╝ ╚════╝"
     echo -e "${C_RESET}"
-    echo -e "${C_DEEP_BLUE}  ╭──────────────────────────────────────────────────────────────────────────╮${C_RESET}"
-    echo -e "${C_DEEP_BLUE}  │ ${C_WHITE}${C_BOLD}                     ${PANEL_SUBTITLE} (v${PANEL_VERSION})                         ${C_DEEP_BLUE}│${C_RESET}"
-    echo -e "${C_DEEP_BLUE}  │ ${C_MUTED}         Next-Gen Game Server & Workload Control Dashboard                ${C_DEEP_BLUE}│${C_RESET}"
-    echo -e "${C_DEEP_BLUE}  │ ${C_AMBER}                  Credit / Author: ${C_WHITE}${C_BOLD}${PANEL_AUTHOR}                               ${C_DEEP_BLUE}│${C_RESET}"
-    echo -e "${C_DEEP_BLUE}  │ ${C_VIBRANT_CYAN}         Repo: ${C_WHITE}https://github.com/NggKhaiz/RHLZ-PANEL                      ${C_DEEP_BLUE}│${C_RESET}"
-    echo -e "${C_DEEP_BLUE}  ╰──────────────────────────────────────────────────────────────────────────╯${C_RESET}"
+    echo -e "  ${C_WHITE}${C_BOLD}${PANEL_SUBTITLE} (v${PANEL_VERSION})${C_RESET}  ${C_MUTED}${PANEL_AUTHOR}${C_RESET}"
     echo ""
 }
 
-log_info() {
-    echo -e " ${C_DEEP_BLUE}[INFO]${C_RESET} ${C_WHITE}$1${C_RESET}"
+log_info()    { echo -e " ${C_DEEP_BLUE}[INFO]${C_RESET} ${C_WHITE}$1${C_RESET}"; }
+log_success() { echo -e " ${C_EMERALD}${C_BOLD}[✓ SUCCESS]${C_RESET} ${C_WHITE}$1${C_RESET}"; }
+log_warning() { echo -e " ${C_AMBER}${C_BOLD}[! WARNING]${C_RESET} ${C_AMBER}$1${C_RESET}"; }
+log_error()   { echo -e " ${C_CRIMSON}${C_BOLD}[✗ ERROR]${C_RESET} ${C_CRIMSON}$1${C_RESET}"; }
+
+usage() {
+    cat <<EOF
+RHLZ Panel installer v${PANEL_VERSION}
+
+Usage: bash install.sh [flags]
+
+  --yes | -y                     non-interactive production install
+  --dev                          development setup (port ${DEFAULT_DEV_PORT})
+  --runtime docker|local         default docker
+  --theme red|blue|purple|cyan|green|amber|rose|white
+  --port N                       default ${DEFAULT_PROD_PORT} (prod) / ${DEFAULT_DEV_PORT} (dev)
+  --admin USER:PASS              create/reset owner
+  --admin-user U --admin-pass P  same, split form
+  --no-java                      skip host OpenJDK
+  --no-docker                    do not install Docker
+  --skip-build                   reuse existing dist/
+  --bind 0.0.0.0                 listen address (documented default)
+  --help                         this message
+
+Env: RHLZ_NONINTERACTIVE=1 RHLZ_RUNTIME RHLZ_THEME RHLZ_PORT
+     RHLZ_ADMIN_USER RHLZ_ADMIN_PASS RHLZ_SESSION_SECRET
+EOF
 }
 
-log_success() {
-    echo -e " ${C_EMERALD}${C_BOLD}[✓ SUCCESS]${C_RESET} ${C_WHITE}$1${C_RESET}"
+parse_args() {
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --yes|-y) NONINTERACTIVE=1 ;;
+            --dev) DEV_MODE=1 ;;
+            --runtime) SELECTED_RUNTIME="${2:-docker}"; shift ;;
+            --theme) SELECTED_THEME="${2:-red}"; shift ;;
+            --port) TARGET_PORT="${2:-}"; shift ;;
+            --admin)
+                local ap="${2:-}"
+                ADMIN_USER="${ap%%:*}"
+                ADMIN_PASS="${ap#*:}"
+                shift
+                ;;
+            --admin-user) ADMIN_USER="${2:-}"; shift ;;
+            --admin-pass) ADMIN_PASS="${2:-}"; shift ;;
+            --no-java) NO_JAVA=1 ;;
+            --no-docker) NO_DOCKER=1 ;;
+            --skip-build) SKIP_BUILD=1 ;;
+            --bind) BIND_ADDR="${2:-0.0.0.0}"; shift ;;
+            --help|-h) SHOW_HELP=1 ;;
+            *) log_warning "Unknown flag: $1" ;;
+        esac
+        shift
+    done
 }
 
-log_warning() {
-    echo -e " ${C_AMBER}${C_BOLD}[! WARNING]${C_RESET} ${C_AMBER}$1${C_RESET}"
-}
-
-log_error() {
-    echo -e " ${C_CRIMSON}${C_BOLD}[✗ ERROR]${C_RESET} ${C_CRIMSON}$1${C_RESET}"
+is_tty() {
+    [ -t 0 ] && return 0
+    return 1
 }
 
 check_root() {
-    if [ "$EUID" -ne 0 ]; then
-        log_warning "Running as non-root user. If package installation fails, please execute: sudo bash install.sh"
+    if [ "${EUID:-$(id -u)}" -ne 0 ]; then
+        log_warning "Running as non-root. Package installs may require sudo."
     fi
 }
 
 get_public_ip() {
     local ip
-    ip=$(curl -s --max-time 4 https://api.ipify.org 2>/dev/null || curl -s --max-time 4 https://ifconfig.me 2>/dev/null || curl -s --max-time 4 https://icanhazip.com 2>/dev/null || echo "127.0.0.1")
+    ip=$(curl -s --max-time 4 https://api.ipify.org 2>/dev/null || curl -s --max-time 4 https://ifconfig.me 2>/dev/null || echo "127.0.0.1")
     echo "$ip" | tr -d '\n' | tr -d '\r'
 }
 
 setup_system_dependencies() {
-    log_info "Updating system package registry and tools..."
-
-    if command -v apt-get &> /dev/null; then
-        # Resolve any interrupted dpkg states and clear stale archive caches that trigger EXDEV / cross-device link errors
+    log_info "Updating system package tools..."
+    if command -v apt-get &>/dev/null; then
         sudo dpkg --configure -a 2>/dev/null || true
-        sudo apt-get clean 2>/dev/null || true
-        sudo rm -f /var/cache/apt/archives/*.deb 2>/dev/null || true
-
-        # Detect only missing packages to avoid re-unpacking already working binaries
         local needed=()
         command -v curl &>/dev/null || needed+=("curl")
         command -v git &>/dev/null || needed+=("git")
         command -v tar &>/dev/null || needed+=("tar")
         command -v xz &>/dev/null || needed+=("xz-utils")
         command -v jq &>/dev/null || needed+=("jq")
-        command -v ufw &>/dev/null || needed+=("ufw")
         [ -f /etc/ssl/certs/ca-certificates.crt ] || needed+=("ca-certificates")
         command -v make &>/dev/null || needed+=("build-essential")
-
         if [ ${#needed[@]} -gt 0 ]; then
             sudo DEBIAN_FRONTEND=noninteractive apt-get update -y -qq 2>/dev/null || true
             sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
                 -o Dpkg::Options::="--force-confdef" \
                 -o Dpkg::Options::="--force-confold" \
-                -o Dpkg::Options::="--force-overwrite" \
-                "${needed[@]}" 2>/dev/null || {
-                    for pkg in "${needed[@]}"; do
-                        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends "$pkg" 2>/dev/null || true
-                    done
-                }
+                "${needed[@]}" 2>/dev/null || true
         fi
-    elif command -v yum &> /dev/null; then
-        sudo yum update -y -q || true
+    elif command -v yum &>/dev/null; then
         sudo yum install -y -q curl git make gcc-c++ ca-certificates tar xz jq || true
-    elif command -v pacman &> /dev/null; then
-        sudo pacman -Sy --noconfirm curl git base-devel ca-certificates tar xz jq || true
     fi
     log_success "Base system dependencies configured."
 }
 
 ensure_nodejs() {
-    log_info "Verifying Node.js 20+ runtime environment..."
+    log_info "Verifying Node.js 20+..."
     local need_install=0
-
-    if ! command -v node &> /dev/null; then
+    if ! command -v node &>/dev/null; then
         need_install=1
     else
         local node_ver
         node_ver=$(node -v | cut -d'.' -f1 | tr -d 'v')
-        if [ "$node_ver" -lt 20 ]; then
-            log_warning "Detected legacy Node.js ($(node -v)). Upgrading to Node.js 22 LTS..."
-            need_install=1
-        fi
+        if [ "$node_ver" -lt 20 ]; then need_install=1; fi
     fi
-
     if [ "$need_install" -eq 1 ]; then
-        log_info "Installing Node.js 22.x LTS..."
-        if command -v apt-get &> /dev/null; then
+        if command -v apt-get &>/dev/null; then
             curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
             sudo apt-get install -y nodejs
-        elif command -v yum &> /dev/null; then
+        elif command -v yum &>/dev/null; then
             curl -fsSL https://rpm.nodesource.com/setup_22.x | sudo bash -
             sudo yum install -y nodejs
         fi
     fi
-
-    log_success "Node.js $(node -v) & npm $(npm -v) verified."
+    log_success "Node.js $(node -v) verified."
 }
 
 prompt_runtime_configuration() {
+    if [ "$NONINTERACTIVE" -eq 1 ]; then
+        RUNTIME_LOCKED="true"
+        log_success "Active Server Runtime: ${SELECTED_RUNTIME} (locked)"
+        return
+    fi
     echo ""
-    echo -e "${C_ELECTRIC_PURPLE}  ╭──────────────────────────────────────────────────────────────────────────╮${C_RESET}"
-    echo -e "${C_ELECTRIC_PURPLE}  │ ${C_WHITE}${C_BOLD}           STEP 1: SELECT SERVER EXECUTION RUNTIME ENGINE                 ${C_ELECTRIC_PURPLE}│${C_RESET}"
-    echo -e "${C_ELECTRIC_PURPLE}  ╰──────────────────────────────────────────────────────────────────────────╯${C_RESET}"
-    echo -e "  Choose how server processes (Minecraft, Node.js, Python) execute on this node:"
-    echo ""
-    echo -e "  ${C_DEEP_BLUE}${C_BOLD} [ 1 ] Docker Container Sandbox ${C_EMERALD}(Recommended for Production)${C_RESET}"
-    echo -e "        ${C_MUTED}Isolated per-server Docker containers with memory & CPU limits.${C_RESET}"
-    echo ""
-    echo -e "  ${C_AMBER}${C_BOLD} [ 2 ] Local Process Engine ${C_MUTED}(Direct Host Execution via Node/Java/Python)${C_RESET}"
-    echo -e "        ${C_MUTED}Spawns background child processes natively directly on the host.${C_RESET}"
-    echo ""
-    echo -e "  ${C_MUTED}--------------------------------------------------------------------------${C_RESET}"
-    echo -e "  ${C_VIBRANT_CYAN}ℹ Notice: On standard panel (port ${DEFAULT_PROD_PORT}), all server creations use this default.${C_RESET}"
-    echo -e "  ${C_VIBRANT_CYAN}  Per-server runtime selection is enabled exclusively in the Developer Panel.${C_RESET}"
-    echo -e "  ${C_MUTED}--------------------------------------------------------------------------${C_RESET}"
-    
+    echo -e "  ${C_DEEP_BLUE}[ 1 ] Docker ${C_EMERALD}(recommended)${C_RESET}"
+    echo -e "  ${C_AMBER}[ 2 ] Local process engine${C_RESET}"
     local choice
-    read -r -p "  Enter Selection [1 or 2, default: 1]: " choice
-    choice=$(echo "$choice" | tr -d ' ')
-
-    case "$choice" in
-        2)
-            SELECTED_RUNTIME="local"
-            RUNTIME_MODE="local"
-            ;;
-        *)
-            SELECTED_RUNTIME="docker"
-            RUNTIME_MODE="docker"
-            ;;
+    read -r -p "  Enter Selection [1 or 2, default: 1]: " choice || true
+    case "$(echo "${choice:-}" | tr -d ' ')" in
+        2) SELECTED_RUNTIME="local" ;;
+        *) SELECTED_RUNTIME="docker" ;;
     esac
-
     RUNTIME_LOCKED="true"
-    echo ""
-    log_success "Active Server Runtime: ${C_BOLD}${SELECTED_RUNTIME}${C_RESET} (Enforced & Locked for standard panel)"
+    log_success "Active Server Runtime: ${SELECTED_RUNTIME}"
 }
 
 prompt_theme_selection() {
+    if [ "$NONINTERACTIVE" -eq 1 ]; then
+        log_success "Panel Accent Theme: ${SELECTED_THEME}"
+        return
+    fi
     echo ""
-    echo -e "${C_ELECTRIC_PURPLE}  ╭──────────────────────────────────────────────────────────────────────────╮${C_RESET}"
-    echo -e "${C_ELECTRIC_PURPLE}  │ ${C_WHITE}${C_BOLD}               STEP 2: SELECT PANEL ACCENT COLOR THEME                    ${C_ELECTRIC_PURPLE}│${C_RESET}"
-    echo -e "${C_ELECTRIC_PURPLE}  ╰──────────────────────────────────────────────────────────────────────────╯${C_RESET}"
-    echo -e "  Select the primary brand & accent color scheme for the panel interface:"
-    echo ""
-    echo -e "  ${C_CRIMSON} [ 1 ] Crimson Red   ${C_MUTED}(Signature RHLZ Red)${C_RESET}"
-    echo -e "  ${C_DEEP_BLUE} [ 2 ] Cobalt Blue   ${C_MUTED}(Classic Deep Blue)${C_RESET}"
-    echo -e "  ${C_ELECTRIC_PURPLE} [ 3 ] Neon Purple   ${C_MUTED}(Cyberpunk Glow)${C_RESET}"
-    echo -e "  ${C_VIBRANT_CYAN} [ 4 ] Cyber Cyan    ${C_MUTED}(Electric Aqua)${C_RESET}"
-    echo -e "  ${C_EMERALD} [ 5 ] Emerald Green ${C_MUTED}(Vibrant Matrix)${C_RESET}"
-    echo -e "  ${C_AMBER} [ 6 ] Amber Gold    ${C_MUTED}(Warm Radiant)${C_RESET}"
-    echo -e "  ${C_ROSE} [ 7 ] Vivid Rose    ${C_MUTED}(Pastel Neon)${C_RESET}"
-    echo -e "  ${C_WHITE} [ 8 ] Clean Slate   ${C_MUTED}(Monochrome Minimal)${C_RESET}"
-    echo ""
-    
+    echo -e "  1 red  2 blue  3 purple  4 cyan  5 green  6 amber  7 rose  8 white"
     local theme_choice
-    read -r -p "  Enter Theme Selection [1-8, default: 1]: " theme_choice
-    theme_choice=$(echo "$theme_choice" | tr -d ' ')
-
-    case "$theme_choice" in
+    read -r -p "  Theme [1-8, default: 1]: " theme_choice || true
+    case "$(echo "${theme_choice:-}" | tr -d ' ')" in
         2) SELECTED_THEME="blue" ;;
         3) SELECTED_THEME="purple" ;;
         4) SELECTED_THEME="cyan" ;;
@@ -233,128 +213,181 @@ prompt_theme_selection() {
         8) SELECTED_THEME="white" ;;
         *) SELECTED_THEME="red" ;;
     esac
-
-    echo ""
-    log_success "Panel Accent Theme Set: ${C_BOLD}${SELECTED_THEME}${C_RESET}"
+    log_success "Panel Accent Theme: ${SELECTED_THEME}"
 }
 
-prompt_java_install() {
-    echo ""
-    echo -e "${C_DEEP_BLUE}  ╭──────────────────────────────────────────────────────────────────────────╮${C_RESET}"
-    echo -e "${C_DEEP_BLUE}  │ ${C_WHITE}${C_BOLD}             STEP 3: JAVA RUNTIME (MINECRAFT LOCAL ENGINE)                ${C_DEEP_BLUE}│${C_RESET}"
-    echo -e "${C_DEEP_BLUE}  ╰──────────────────────────────────────────────────────────────────────────╯${C_RESET}"
-    
-    if command -v java &> /dev/null; then
-        log_success "Java is already installed ($(java -version 2>&1 | head -n 1))."
-    elif [ -f ".data/bin/jre-25/bin/java" ] || [ -f ".data/bin/jre-21/bin/java" ]; then
-        log_success "Portable OpenJDK runtime detected in .data/bin."
-    else
+install_java_host() {
+    if [ "$NO_JAVA" -eq 1 ]; then
+        log_info "Skipping host Java (--no-java)."
+        return
+    fi
+    if command -v java &>/dev/null; then
+        log_success "Java is already installed."
+        return
+    fi
+    if [ -f ".data/bin/jre-25/bin/java" ] || [ -f ".data/bin/jre-21/bin/java" ]; then
+        log_success "Portable OpenJDK detected."
+        return
+    fi
+    if [ "$NONINTERACTIVE" -eq 0 ]; then
         local install_java
-        read -r -p "  Install OpenJDK Java Runtime on host? [y/N, default: y]: " install_java
-        install_java=$(echo "$install_java" | tr -d ' ')
-        if [[ "$install_java" =~ ^[Nn]$ ]]; then
-            log_info "Skipping host Java installation. (The panel auto-provisions portable OpenJDK 25/21/17 on demand)."
-        else
-            log_info "Installing OpenJDK..."
-            if command -v apt-get &> /dev/null; then
-                sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
-                    -o Dpkg::Options::="--force-confdef" \
-                    -o Dpkg::Options::="--force-confold" \
-                    -o Dpkg::Options::="--force-overwrite" \
-                    openjdk-21-jre-headless 2>/dev/null || sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends openjdk-17-jre-headless 2>/dev/null || log_warning "System Java package unavailable. Portable JRE/JDK will be automatically downloaded by panel on demand."
-            elif command -v yum &> /dev/null; then
-                sudo yum install -y -q java-21-openjdk-headless || sudo yum install -y -q java-17-openjdk-headless || true
-            fi
-            log_success "Java runtime verified."
+        read -r -p "  Install OpenJDK on host? [Y/n]: " install_java || true
+        if [[ "${install_java:-}" =~ ^[Nn]$ ]]; then
+            log_info "Skipping host Java."
+            return
+        fi
+    fi
+    log_info "Installing OpenJDK..."
+    if command -v apt-get &>/dev/null; then
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends openjdk-21-jre-headless 2>/dev/null \
+            || sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends openjdk-17-jre-headless 2>/dev/null \
+            || log_warning "System Java unavailable; panel will provision a portable JRE."
+    fi
+}
+
+start_docker_engine() {
+    if command -v docker &>/dev/null && docker info &>/dev/null; then
+        return 0
+    fi
+    sudo service docker start 2>/dev/null || true
+    if ! docker info &>/dev/null; then
+        if command -v dockerd &>/dev/null; then
+            sudo dockerd >/tmp/rhlz-dockerd.log 2>&1 &
+            sleep 2
         fi
     fi
 }
 
-prompt_docker_install() {
-    echo ""
-    echo -e "${C_DEEP_BLUE}  ╭──────────────────────────────────────────────────────────────────────────╮${C_RESET}"
-    echo -e "${C_DEEP_BLUE}  │ ${C_WHITE}${C_BOLD}               STEP 4: DOCKER CONTAINER ENGINE VERIFICATION              ${C_DEEP_BLUE}│${C_RESET}"
-    echo -e "${C_DEEP_BLUE}  ╰──────────────────────────────────────────────────────────────────────────╯${C_RESET}"
-
-    if command -v docker &> /dev/null; then
-        log_success "Docker Engine is active ($(docker --version 2>/dev/null | head -n 1))."
-    else
+install_docker_engine() {
+    if command -v docker &>/dev/null; then
+        log_success "Docker Engine is present."
+        start_docker_engine
+        sudo usermod -aG docker "${SUDO_USER:-$USER}" 2>/dev/null || true
+        return
+    fi
+    if [ "$NO_DOCKER" -eq 1 ]; then
         if [ "$SELECTED_RUNTIME" = "docker" ]; then
-            log_info "Installing Docker Engine for container isolation..."
-            curl -fsSL https://get.docker.com | sudo sh
-            sudo systemctl enable --now docker 2>/dev/null || true
-            sudo usermod -aG docker "$USER" 2>/dev/null || true
-            log_success "Docker Engine installed and started."
-        else
-            local install_docker
-            read -r -p "  Install Docker Engine? [y/N, default: n]: " install_docker
-            if [[ "$install_docker" =~ ^[Yy]$ ]]; then
-                curl -fsSL https://get.docker.com | sudo sh
-                sudo systemctl enable --now docker 2>/dev/null || true
-                sudo usermod -aG docker "$USER" 2>/dev/null || true
-                log_success "Docker installed."
-            else
-                log_info "Docker skipped (Local Process mode selected)."
-            fi
+            log_error "Docker is required for --runtime docker but --no-docker was set."
+            exit 1
+        fi
+        return
+    fi
+    if [ "$SELECTED_RUNTIME" != "docker" ] && [ "$NONINTERACTIVE" -eq 0 ]; then
+        local install_docker
+        read -r -p "  Install Docker Engine? [y/N]: " install_docker || true
+        if [[ ! "${install_docker:-}" =~ ^[Yy]$ ]]; then
+            log_info "Docker skipped."
+            return
         fi
     fi
+    if [ "$SELECTED_RUNTIME" != "docker" ] && [ "$NONINTERACTIVE" -eq 1 ]; then
+        return
+    fi
+    log_info "Installing Docker Engine..."
+    curl -fsSL https://get.docker.com | sudo sh
+    start_docker_engine
+    sudo usermod -aG docker "${SUDO_USER:-$USER}" 2>/dev/null || true
+    if ! command -v docker &>/dev/null; then
+        log_error "Docker install failed."
+        exit 1
+    fi
+    log_success "Docker Engine installed."
+}
+
+is_app_root() {
+    [ -f "package.json" ] && grep -qE '"name"[[:space:]]*:[[:space:]]*"rhlz-panel"' package.json 2>/dev/null
 }
 
 prepare_repository() {
     log_info "Preparing application workspace..."
-
-    # Check if we are already inside the project workspace
-    if [ -f "package.json" ] && grep -qE "rhlz-panel|raven-panel" "package.json" 2>/dev/null; then
+    if is_app_root; then
         PROJECT_DIR="$(pwd)"
-        log_info "Using current workspace directory: ${PROJECT_DIR}"
-    elif [ -d "rhlz-panel" ]; then
+        log_info "Using current workspace: ${PROJECT_DIR}"
+        return
+    fi
+    if [ -f "rhlz-panel/package.json" ] && grep -qE '"name"[[:space:]]*:[[:space:]]*"rhlz-panel"' rhlz-panel/package.json 2>/dev/null; then
         PROJECT_DIR="$(pwd)/rhlz-panel"
         cd "$PROJECT_DIR"
-        log_info "Found existing 'rhlz-panel' directory. Syncing repository..."
-        git pull origin main 2>/dev/null || git pull origin master 2>/dev/null || true
+        log_info "Using nested rhlz-panel/: ${PROJECT_DIR}"
+        return
+    fi
+    log_info "Cloning ${REPO_URL}..."
+    git clone "$REPO_URL" rhlz-src-tmp
+    if [ -f "rhlz-src-tmp/package.json" ] && grep -q rhlz-panel rhlz-src-tmp/package.json; then
+        mv rhlz-src-tmp rhlz-panel
+    elif [ -f "rhlz-src-tmp/rhlz-panel/package.json" ]; then
+        mv rhlz-src-tmp/rhlz-panel rhlz-panel
+        rm -rf rhlz-src-tmp
     else
-        log_info "Cloning RHLZ Panel from ${REPO_URL}..."
-        git clone "$REPO_URL" rhlz-panel
-        PROJECT_DIR="$(pwd)/rhlz-panel"
-        cd "$PROJECT_DIR"
+        mv rhlz-src-tmp rhlz-panel
+    fi
+    PROJECT_DIR="$(pwd)/rhlz-panel"
+    cd "$PROJECT_DIR"
+}
+
+env_has_key() {
+    grep -qE "^${1}=" .env 2>/dev/null
+}
+
+merge_env_key() {
+    local key="$1" val="$2"
+    if [ -f .env ] && env_has_key "$key"; then
+        return
+    fi
+    if [ -f .env ]; then
+        printf '\n%s=%s\n' "$key" "$val" >> .env
     fi
 }
 
 setup_environment() {
     local target_port=$1
     local run_mode=$2
-
-    log_info "Initializing environment & data structures..."
-
-    # Cleanly ensure directories without file/directory collision
-    if [ -f ".logs" ]; then
-        rm -f ".logs"
-    fi
+    log_info "Initializing environment..."
     mkdir -p .data/servers .data/temp .data/logs backups .logs 2>/dev/null || true
 
-    # Generate JWT Secret
-    local jwt_secret
-    jwt_secret=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))" 2>/dev/null || echo "rhlz_secret_key_$(date +%s)")
+    local secret=""
+    if [ -n "${RHLZ_SESSION_SECRET:-}" ]; then
+        secret="$RHLZ_SESSION_SECRET"
+    elif [ -f .env ] && env_has_key RHLZ_SESSION_SECRET; then
+        secret=""
+    elif [ -f .env ] && env_has_key JWT_SECRET; then
+        secret=""
+    else
+        secret=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
+    fi
 
-    cat > .env <<EOF
-# ==============================================================================
+    if [ ! -f .env ]; then
+        cat > .env <<EOF
 # RHLZ Panel Configuration
-# Credit: Jishnu (upstream) / RHLZ
-# ==============================================================================
 NODE_ENV=${run_mode}
 PORT=${target_port}
-JWT_SECRET=${jwt_secret}
+RHLZ_SESSION_SECRET=${secret}
+JWT_SECRET=${secret}
 DEFAULT_RUNTIME=${SELECTED_RUNTIME:-docker}
-ENABLE_DOCKER=$( [ "${SELECTED_RUNTIME:-docker}" = "docker" ] && echo "true" || echo "false" )
-PANEL_RUNTIME_MODE=${RUNTIME_MODE:-docker}
+ENABLE_DOCKER=$([ "${SELECTED_RUNTIME:-docker}" = "docker" ] && echo "true" || echo "false")
+PANEL_RUNTIME_MODE=${SELECTED_RUNTIME:-docker}
 PANEL_RUNTIME_LOCKED=${RUNTIME_LOCKED:-true}
 PANEL_THEME=${SELECTED_THEME:-red}
-DEV_MODE=$( [ "$run_mode" = "development" ] && echo "true" || echo "false" )
-PANEL_DEV_MODE=$( [ "$run_mode" = "development" ] && echo "true" || echo "false" )
+DEV_MODE=$([ "$run_mode" = "development" ] && echo "true" || echo "false")
+PANEL_DEV_MODE=$([ "$run_mode" = "development" ] && echo "true" || echo "false")
 EOF
+        chmod 600 .env 2>/dev/null || true
+    else
+        log_info ".env exists — merging missing keys only (secrets preserved)."
+        merge_env_key NODE_ENV "$run_mode"
+        merge_env_key PORT "$target_port"
+        if [ -n "$secret" ]; then
+            merge_env_key RHLZ_SESSION_SECRET "$secret"
+            merge_env_key JWT_SECRET "$secret"
+        fi
+        merge_env_key DEFAULT_RUNTIME "${SELECTED_RUNTIME:-docker}"
+        merge_env_key ENABLE_DOCKER "$([ "${SELECTED_RUNTIME:-docker}" = "docker" ] && echo "true" || echo "false")"
+        merge_env_key PANEL_RUNTIME_MODE "${SELECTED_RUNTIME:-docker}"
+        merge_env_key PANEL_RUNTIME_LOCKED "${RUNTIME_LOCKED:-true}"
+        merge_env_key PANEL_THEME "${SELECTED_THEME:-red}"
+    fi
 
-    # Persist runtime & theme settings to .data/settings.json
-    node -e '
+    DEFAULT_RUNTIME="${SELECTED_RUNTIME:-docker}" PANEL_RUNTIME_LOCKED="${RUNTIME_LOCKED:-true}" PANEL_THEME="${SELECTED_THEME:-red}" node -e '
       const fs = require("fs");
       const path = ".data/settings.json";
       let s = {};
@@ -365,171 +398,179 @@ EOF
       fs.writeFileSync(path, JSON.stringify(s, null, 2));
     ' 2>/dev/null || true
 
-    log_success "Environment configured on port ${target_port} (Runtime: ${SELECTED_RUNTIME:-docker}, Theme: ${SELECTED_THEME:-red})."
+    log_success "Environment configured on port ${target_port}."
 }
 
 build_application() {
+    if [ "$SKIP_BUILD" -eq 1 ] && [ -f dist/server.cjs ]; then
+        log_info "Reusing existing dist/ (--skip-build)."
+        return
+    fi
     log_info "Installing NPM dependencies..."
-    npm install --no-audit --no-fund --quiet
-
-    log_info "Compiling frontend assets & bundling server..."
+    if [ "$DEV_MODE" -eq 1 ]; then
+        npm install --no-audit --no-fund --quiet
+        return
+    fi
+    npm ci --omit=dev --no-optional --no-audit --no-fund 2>/dev/null || npm install --no-audit --no-fund --quiet
+    log_info "Building..."
     npm run build
-
-    log_success "Application compilation succeeded."
+    log_success "Build succeeded."
 }
 
 configure_pm2_service() {
     local target_port=$1
-    log_info "Configuring high-availability background process daemon..."
-
-    if ! command -v pm2 &> /dev/null; then
+    log_info "Configuring pm2 process ${PM2_NAME}..."
+    if ! command -v pm2 &>/dev/null; then
         sudo npm install -g pm2 2>/dev/null || npm install -g pm2 2>/dev/null || true
     fi
+    npx pm2 delete raven-hub 2>/dev/null || true
+    npx pm2 delete raven-panel 2>/dev/null || true
+    npx pm2 delete rhlz-panel 2>/dev/null || true
 
-    # Terminate existing instance if present
-    pm2 delete raven-hub 2>/dev/null || npx pm2 delete raven-hub 2>/dev/null || true
-    pm2 delete raven-panel 2>/dev/null || npx pm2 delete raven-panel 2>/dev/null || true
-    
-    # Launch daemon
-    PORT="${target_port}" NODE_OPTIONS="--max-old-space-size=96" npx pm2 start "scripts/start-with-update.sh" --name "raven-hub" 2>/dev/null || PORT="${target_port}" NODE_OPTIONS="--max-old-space-size=96" npx pm2 start "dist/server.cjs" --name "raven-hub" 2>/dev/null || PORT="${target_port}" NODE_OPTIONS="--max-old-space-size=96" npx pm2 start "dist/server.cjs" --name "raven-panel" 2>/dev/null || 
+    PORT="${target_port}" NODE_ENV=production NODE_OPTIONS="--max-old-space-size=96" \
+        npx pm2 start "dist/server.cjs" --name "${PM2_NAME}" --update-env
     npx pm2 save 2>/dev/null || true
 
-    # systemd-free persistence: resurrect the process list on boot via cron.
-    if command -v crontab &> /dev/null; then
-        ( crontab -l 2>/dev/null | grep -v "pm2 resurrect" ; echo "@reboot $(command -v pm2 || echo /usr/local/bin/pm2) resurrect" ) | crontab - 2>/dev/null || true
-        log_info "Added '@reboot pm2 resurrect' cron entry for boot persistence (no systemd required)."
+    if command -v crontab &>/dev/null; then
+        ( crontab -l 2>/dev/null | grep -v "pm2 resurrect" ; echo "@reboot $(command -v pm2 || echo npx pm2) resurrect" ) | crontab - 2>/dev/null || true
+        log_info "Added '@reboot pm2 resurrect' cron (no systemd)."
     else
-        log_warning "crontab not found - install cron, or use Docker/supervisord for boot persistence."
+        log_warning "crontab not found — use Docker restart policy for persistence."
     fi
+    log_success "PM2 service '${PM2_NAME}' registered."
+}
 
-    log_success "PM2 service 'rhlz-panel' registered and active."
+has_owner_user() {
+    [ -f .data/users.json ] && node -e '
+      const fs=require("fs");
+      try {
+        const u=JSON.parse(fs.readFileSync(".data/users.json","utf8"));
+        process.exit(Array.isArray(u)&&u.some(x=>x.role==="owner"||x.role==="admin")?0:1);
+      } catch(e){ process.exit(1); }
+    ' 2>/dev/null
 }
 
 create_initial_admin() {
+    if [ -n "$ADMIN_USER" ] && [ -n "$ADMIN_PASS" ]; then
+        npm run createuser -- "$ADMIN_USER" "$ADMIN_PASS"
+        return
+    fi
+    if [ "$NONINTERACTIVE" -eq 1 ]; then
+        if has_owner_user; then
+            log_info "Owner account already present; skipping --admin."
+            return
+        fi
+        log_error "Non-interactive install requires --admin USER:PASS (or RHLZ_ADMIN_USER/RHLZ_ADMIN_PASS) when no owner exists."
+        exit 1
+    fi
     echo ""
-    echo -e "${C_ELECTRIC_PURPLE}  ╭──────────────────────────────────────────────────────────────────────────╮${C_RESET}"
-    echo -e "${C_ELECTRIC_PURPLE}  │ ${C_WHITE}${C_BOLD}                   CREATE PRIMARY OWNER ACCOUNT                           ${C_ELECTRIC_PURPLE}│${C_RESET}"
-    echo -e "${C_ELECTRIC_PURPLE}  ╰──────────────────────────────────────────────────────────────────────────╯${C_RESET}"
     npm run createuser || true
+}
+
+print_success() {
+    local server_ip port="$1"
+    server_ip=$(get_public_ip)
+    echo ""
+    echo -e "${C_EMERALD}${C_BOLD}  ${PANEL_TITLE} INSTALLED SUCCESSFULLY${C_RESET}"
+    echo -e "  Panel URL:     ${C_VIBRANT_CYAN}http://${server_ip}:${port}${C_RESET}"
+    echo -e "  Local URL:     ${C_VIBRANT_CYAN}http://localhost:${port}${C_RESET}"
+    echo -e "  PM2 name:      ${C_AMBER}${PM2_NAME}${C_RESET}"
+    echo -e "  Admin user:    ${C_WHITE}${ADMIN_USER:-existing}${C_RESET}"
+    echo -e "  Runtime:       ${SELECTED_RUNTIME}  Theme: ${SELECTED_THEME}"
+    echo ""
+    echo -e "  ${C_MUTED}npx pm2 logs ${PM2_NAME}${C_RESET}"
+    echo -e "  ${C_MUTED}npx pm2 restart ${PM2_NAME}${C_RESET}"
+    echo -e "  ${C_MUTED}bash update.sh --yes${C_RESET}"
+    echo -e "  ${C_MUTED}bash uninstall.sh --yes${C_RESET}"
+    echo ""
 }
 
 install_production() {
     print_banner
-    echo -e " ${BG_GREEN}${C_BOLD} [ PRODUCTION INSTALLATION ] ${C_RESET} ${C_WHITE}Deploying ${PANEL_TITLE} on port ${DEFAULT_PROD_PORT}${C_RESET}\n"
-    
+    echo -e " ${BG_GREEN}${C_BOLD} [ PRODUCTION ] ${C_RESET} port ${TARGET_PORT}\n"
     check_root
     setup_system_dependencies
     ensure_nodejs
     prompt_runtime_configuration
     prompt_theme_selection
-    prompt_java_install
-    prompt_docker_install
-
     prepare_repository
-    setup_environment "$DEFAULT_PROD_PORT" "production"
+    install_java_host
+    install_docker_engine
+    setup_environment "$TARGET_PORT" "production"
     build_application
-    configure_pm2_service "$DEFAULT_PROD_PORT"
+    configure_pm2_service "$TARGET_PORT"
     create_initial_admin
-
-    local server_ip
-    server_ip=$(get_public_ip)
-    
-    echo ""
-    echo -e "${C_EMERALD}${C_BOLD}  ╔══════════════════════════════════════════════════════════════════════════╗${C_RESET}"
-    echo -e "${C_EMERALD}${C_BOLD}  ║                   ${PANEL_TITLE} INSTALLED SUCCESSFULLY!                     ║${C_RESET}"
-    echo -e "${C_EMERALD}${C_BOLD}  ╚══════════════════════════════════════════════════════════════════════════╝${C_RESET}"
-    echo ""
-    echo -e "  ${C_MUTED}>>${C_RESET} ${C_WHITE}${C_BOLD}Panel Web Interface:${C_RESET}    ${C_VIBRANT_CYAN}${C_BOLD}http://${server_ip}:${DEFAULT_PROD_PORT}${C_RESET}"
-    echo -e "  ${C_MUTED}>>${C_RESET} ${C_WHITE}${C_BOLD}Localhost Access:${C_RESET}       ${C_VIBRANT_CYAN}${C_BOLD}http://localhost:${DEFAULT_PROD_PORT}${C_RESET}"
-    echo -e "  ${C_MUTED}>>${C_RESET} ${C_WHITE}${C_BOLD}Enforced Runtime:${C_RESET}       ${C_AMBER}${SELECTED_RUNTIME:-docker}${C_RESET} (Locked: ${RUNTIME_LOCKED:-true})"
-    echo -e "  ${C_MUTED}>>${C_RESET} ${C_WHITE}${C_BOLD}Accent Theme:${C_RESET}           ${C_ELECTRIC_PURPLE}${SELECTED_THEME:-red}${C_RESET}"
-    echo -e "  ${C_MUTED}>>${C_RESET} ${C_WHITE}${C_BOLD}Creator / Credit:${C_RESET}       ${C_EMERALD}${PANEL_AUTHOR}${C_RESET}"
-    echo ""
-    echo -e "  ${C_MUTED}┌── Useful Management Commands ───────────────────────────────────────────┐${C_RESET}"
-    echo -e "  ${C_MUTED}│${C_RESET} Check Status:     ${C_VIBRANT_CYAN}npx pm2 status${C_RESET}"
-    echo -e "  ${C_MUTED}│${C_RESET} Live Logs:        ${C_VIBRANT_CYAN}npx pm2 logs rhlz-panel${C_RESET}"
-    echo -e "  ${C_MUTED}│${C_RESET} Restart Panel:    ${C_VIBRANT_CYAN}npx pm2 restart rhlz-panel${C_RESET}"
-    echo -e "  ${C_MUTED}│${C_RESET} Update Panel:     ${C_VIBRANT_CYAN}bash update.sh${C_RESET}"
-    echo -e "  ${C_MUTED}│${C_RESET} Uninstall:        ${C_VIBRANT_CYAN}bash uninstall.sh${C_RESET}"
-    echo -e "  ${C_MUTED}└─────────────────────────────────────────────────────────────────────────┘${C_RESET}"
-    echo ""
+    print_success "$TARGET_PORT"
 }
 
 install_development() {
     print_banner
-    echo -e " ${BG_AMBER}${C_BOLD} [ DEVELOPMENT SETUP ] ${C_RESET} ${C_WHITE}Configuring ${PANEL_TITLE} Dev Environment on port ${DEFAULT_DEV_PORT}${C_RESET}\n"
-    
+    echo -e " ${BG_AMBER}${C_BOLD} [ DEVELOPMENT ] ${C_RESET} port ${TARGET_PORT}\n"
     setup_system_dependencies
     ensure_nodejs
     prompt_runtime_configuration
     prompt_theme_selection
     prepare_repository
-    setup_environment "$DEFAULT_DEV_PORT" "development"
-    
-    log_info "Installing dependencies..."
-    npm install
+    setup_environment "$TARGET_PORT" "development"
+    npm install --no-audit --no-fund --quiet
     create_initial_admin
-
-    echo ""
-    log_success "Development workspace ready!"
-    echo -e "  Start development server: ${C_VIBRANT_CYAN}npm run dev${C_RESET}"
+    log_success "Development workspace ready. Start with: npm run dev"
 }
 
-# Main Interactive Dispatcher
-while true; do
-    print_banner
-    echo -e "  ${C_DEEP_BLUE}${C_BOLD} [ 1 ] ${C_WHITE}Install ${PANEL_TITLE} (Production Deployment - Port ${DEFAULT_PROD_PORT})${C_RESET}"
-    echo -e "  ${C_DEEP_BLUE}${C_BOLD} [ 2 ] ${C_WHITE}Install ${PANEL_TITLE} (Development Mode - Port ${DEFAULT_DEV_PORT})${C_RESET}"
-    echo -e "  ${C_DEEP_BLUE}${C_BOLD} [ 3 ] ${C_WHITE}Update Panel (Pull GitHub updates & rebuild)${C_RESET}"
-    echo -e "  ${C_DEEP_BLUE}${C_BOLD} [ 4 ] ${C_WHITE}Create / Reset Administrator Account${C_RESET}"
-    echo -e "  ${C_DEEP_BLUE}${C_BOLD} [ 5 ] ${C_WHITE}Restart Panel Service${C_RESET}"
-    echo -e "  ${C_DEEP_BLUE}${C_BOLD} [ 6 ] ${C_WHITE}Uninstall Panel${C_RESET}"
-    echo -e "  ${C_DEEP_BLUE}${C_BOLD} [ 7 ] ${C_MUTED}Exit${C_RESET}"
-    echo ""
-    echo -e "  ${C_MUTED}──────────────────────────────────────────────────────────────────────────${C_RESET}"
-    
-    read -r -p "  Select an option [1-7]: " option
-    option=$(echo "$option" | tr -d ' ')
+interactive_menu() {
+    while true; do
+        print_banner
+        echo -e "  ${C_DEEP_BLUE}[ 1 ]${C_RESET} Install production (port ${DEFAULT_PROD_PORT})"
+        echo -e "  ${C_DEEP_BLUE}[ 2 ]${C_RESET} Development setup (port ${DEFAULT_DEV_PORT})"
+        echo -e "  ${C_DEEP_BLUE}[ 3 ]${C_RESET} Update"
+        echo -e "  ${C_DEEP_BLUE}[ 4 ]${C_RESET} Create / reset owner"
+        echo -e "  ${C_DEEP_BLUE}[ 5 ]${C_RESET} Restart ${PM2_NAME}"
+        echo -e "  ${C_DEEP_BLUE}[ 6 ]${C_RESET} Uninstall"
+        echo -e "  ${C_DEEP_BLUE}[ 7 ]${C_RESET} Exit"
+        echo ""
+        local option
+        read -r -p "  Select [1-7]: " option || true
+        option=$(echo "${option:-}" | tr -d ' ')
+        case "$option" in
+            1) TARGET_PORT="${TARGET_PORT:-$DEFAULT_PROD_PORT}"; install_production; read -r -p "  Press Enter..." _ || true ;;
+            2) DEV_MODE=1; TARGET_PORT="${TARGET_PORT:-$DEFAULT_DEV_PORT}"; install_development; read -r -p "  Press Enter..." _ || true ;;
+            3) bash update.sh; read -r -p "  Press Enter..." _ || true ;;
+            4) npm run createuser || (cd rhlz-panel && npm run createuser); read -r -p "  Press Enter..." _ || true ;;
+            5) npx pm2 restart "${PM2_NAME}" 2>/dev/null || true; log_success "Restarted."; read -r -p "  Press Enter..." _ || true ;;
+            6) bash uninstall.sh; exit 0 ;;
+            7) exit 0 ;;
+            *) log_error "Invalid selection." ;;
+        esac
+    done
+}
 
-    case "$option" in
-        1)
-            install_production
-            echo ""
-            read -r -p "  Press Enter to return to main menu..." _
-            ;;
-        2)
-            install_development
-            echo ""
-            read -r -p "  Press Enter to return to main menu..." _
-            ;;
-        3)
-            bash update.sh
-            echo ""
-            read -r -p "  Press Enter to return to main menu..." _
-            ;;
-        4)
-            npm run createuser || (cd rhlz-panel && npm run createuser)
-            echo ""
-            read -r -p "  Press Enter to return to main menu..." _
-            ;;
-        5)
-            log_info "Restarting RHLZ Panel..."
-            pm2 restart rhlz-panel 2>/dev/null || npx pm2 restart rhlz-panel 2>/dev/null || pm2 restart raven-panel 2>/dev/null || npx pm2 restart raven-panel 2>/dev/null || npm run start:auto-update
-            log_success "Panel service restarted."
-            echo ""
-            read -r -p "  Press Enter to return to main menu..." _
-            ;;
-        6)
-            bash uninstall.sh
-            exit 0
-            ;;
-        7)
-            echo -e "\n  ${C_AMBER}Exiting installer. Thank you for using ${PANEL_TITLE}!${C_RESET}\n"
-            exit 0
-            ;;
-        *)
-            log_error "Invalid selection. Please enter a number between 1 and 7."
-            sleep 1.2
-            ;;
-    esac
-done
+parse_args "$@"
+if [ "$SHOW_HELP" -eq 1 ]; then
+    usage
+    exit 0
+fi
+if [ "${RHLZ_NONINTERACTIVE:-}" = "1" ]; then
+    NONINTERACTIVE=1
+fi
+if ! is_tty; then
+    NONINTERACTIVE=1
+fi
+
+if [ "$DEV_MODE" -eq 1 ]; then
+    TARGET_PORT="${TARGET_PORT:-$DEFAULT_DEV_PORT}"
+else
+    TARGET_PORT="${TARGET_PORT:-$DEFAULT_PROD_PORT}"
+fi
+
+if [ "$NONINTERACTIVE" -eq 1 ] || [ "$DEV_MODE" -eq 1 ]; then
+    if [ "$DEV_MODE" -eq 1 ] && [ "$NONINTERACTIVE" -eq 0 ]; then
+        install_development
+    elif [ "$DEV_MODE" -eq 1 ]; then
+        install_development
+    else
+        install_production
+    fi
+    exit 0
+fi
+
+interactive_menu
