@@ -1,0 +1,400 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SKILL FLOWER RHLZ  ·  v4.0  ·  2026-08-20
+  Master XML prompt for an AI coding agent continuing RHLZ Panel.
+
+  HOW TO USE
+  1. Paste this entire file as the system / first user message of a coding agent
+     that has the repo open (working tree = rhlz-panel/).
+  2. Say: "Execute Skill Flower RHLZ. Start at petal P0. Do not skip gates."
+  3. The agent must implement, test, document, then loop — not just plan.
+
+  Language of code/comments/docs: English.
+  Operator-facing installer strings may stay bilingual (EN primary).
+-->
+<skill id="flower-rhlz" name="Skill Flower RHLZ" version="4.0.0" product="RHLZ Panel" repo="https://github.com/NggKhaiz/RHLZ-PANEL.git">
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       PISTIL — identity, mission, hard constraints (never violate)
+       ═══════════════════════════════════════════════════════════════════ -->
+  <pistil>
+    <identity>
+      <product>RHLZ</product>
+      <panel>RHLZ Panel</panel>
+      <security-core>RHLZ Secure Core (Cypher)</security-core>
+      <tagline>Compact control plane for game servers and jailed code runtimes.</tagline>
+      <upstream>MIT-licensed panel by Jishnu. Attribution stays in LICENSE. Do not resurrect old product-name strings in UI, scripts, cookies, API prefixes, or docs (except LICENSE / legal credit).</upstream>
+      <stack>Node 20+ · TypeScript · Express · Socket.IO · React 19 · Vite 6 · Tailwind 4 · dockerode · pm2/Docker/PaaS. Keep this stack (see docs/STACK.md). Do not rewrite in Go/Rust/Python.</stack>
+      <single-source-brand>src/brand.ts is the only place brand strings are defined. Import them. Do not hardcode "RHLZ" in random components when a constant exists. VERSION in brand.ts, package.json, /api/health MUST match.</single-source-brand>
+    </identity>
+
+    <mission>
+      Continue coding and complete RHLZ Panel so an operator can go from a bare Linux VPS
+      to a signed-in, 2FA-ready panel with working servers using ONE command and ZERO
+      interactive menus. Then raise code quality, close real bugs, add missing software
+      types, harden security with honest pentest loops, and keep docs/web tutorial in sync.
+      Ship working code every loop. Do not produce plans instead of patches.
+    </mission>
+
+    <hard-constraints>
+      <c id="linux-only">Linux + Docker + Compose + free PaaS only. No Windows support.</c>
+      <c id="no-systemd">No systemd units, no `systemctl enable` as the persistence story. Persistence = pm2 + `@reboot pm2 resurrect` cron, OR supervisord, OR Docker restart policy. `systemctl` may only appear as a best-effort Docker-engine start, never as the panel service. Docs must not teach systemd for the panel.</c>
+      <c id="no-video">No video onboarding. CSS/SVG + in-app /docs tutorial only.</c>
+      <c id="disk-gate">Production install (`npm ci --omit=dev --no-optional`) target ≤ 50 MB / ≤ 5 000 files; hard cap 128 MB / 10 000 files. Do not vendor monaco/turbo.</c>
+      <c id="no-default-secret">Never ship a guessable JWT/session secret. Reject placeholders. Prefer RHLZ_SESSION_SECRET, fallback JWT_SECRET, else generate + persist 0600 to .data/secret.</c>
+      <c id="no-eval">No eval / new Function on user data. dangerouslySetInnerHTML only for static developer-authored CSS.</c>
+      <c id="honesty">docs/SECURITY-LOOP.md is append-only and honest. Local static + unit + live defensive probes only. Never claim a 50-round cloud pentest.</c>
+      <c id="wontfix-respect">Honor docs/WONTFIX.md unless this prompt explicitly reopens an item. S3 backups stay WONTFIX. `/api/v1` versioning stays WONTFIX.</c>
+      <c id="nested-layout">GitHub repo root may contain a `rhlz-panel/` subdirectory. Installer, updater, Dockerfile, and clone logic MUST detect both layouts (cwd is the app, OR cwd/rhlz-panel is the app) and never clone into a third nested copy.</c>
+      <c id="pm2-name">Canonical process name is `rhlz-panel`. Migrate/delete leftover `raven-hub` / `raven-panel` names. All scripts, docs, and success banners must agree.</c>
+    </hard-constraints>
+  </pistil>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       CURRENT TREE — facts the next agent must treat as ground truth
+       ═══════════════════════════════════════════════════════════════════ -->
+  <current-state as-of="2026-08-20">
+    <what-works>
+      Dual runtime (Docker itzg + local spawn + mock). Minecraft Paper/Spigot/Forge/Fabric + proxies via docker.
+      App runtimes Node/Python/Go/Rust/C/C++/C#/Ruby/PHP/Bash (Docker image + startup).
+      File manager, backups, worlds, plugins/mods, SFTP, sub-users, nodes UI, Playit (Docker path),
+      cookie sessions + CSRF, TOTP 2FA, API keys hashed, SSRF/path/zip-slip/miner guards,
+      sandbox POST /api/run (13 langs), RHLZ Keeper, in-app /docs, PaaS config files,
+      ~35 unit tests, 50-row security ledger already filled (do not rewrite; append from 51).
+    </what-works>
+
+    <known-defects priority="fix in P0–P1">
+      <d sev="CRIT" id="always-listen">server.ts boots with `if (true) { startServer(); }` plus debug `console.log("IS MAIN:")`. Tests importing the module start a real listener. Restore a real isMain guard; strip debug logs.</d>
+      <d sev="HIGH" id="google-trust">POST /api/auth/google trusts client-supplied googleId/email with no ID-token verify. Either verify Google token server-side or disable by default and document as insecure until fixed.</d>
+      <d sev="HIGH" id="rcon-admin">Docker Minecraft env sets RCON_PASSWORD=admin and ONLINE_MODE=FALSE unconditionally. Generate per-server RCON secret, never log it, do not default to "admin".</d>
+      <d sev="HIGH" id="env-bleed">Local runtime spawn uses `...process.env`, leaking RHLZ_SESSION_SECRET / webhook secret into game/app processes. Scrub like the sandbox (PATH/HOME/TMPDIR/LANG + PORT/SERVER_PORT/JAVA_HOME only).</d>
+      <d sev="HIGH" id="node-agent">public/node.sh: Node 18 (need 20+), `cors()` wildcard, docker.sock proxy = root-equivalent, `pm2 startup` (systemd), no rate-limit. Harden: Node 22, CORS deny-by-default, constant-time key already present — add optional HMAC nonce (reopen WONTFIX HMAC if cheap), no systemd (cron @reboot), do not print NODE_KEY twice to logs.</d>
+      <d sev="HIGH" id="webhook-query">Webhook accepts `?secret=` which lands in access logs. Drop query-secret; keep HMAC header + x-webhook-secret only.</d>
+      <d sev="MED" id="version-drift">brand.ts VERSION=1.0.0 · package.json=3.0.0 · /api/health=3.2.0. Unify to 3.1.0 (this sprint) then bump only from brand.ts (health imports VERSION).</d>
+      <d sev="MED" id="port-drift">server.ts default PORT=3000; docs/installer=6767. Production default 6767; dev 30000.</d>
+      <d sev="MED" id="pm2-drift">install.sh starts `raven-hub`, success text says `rhlz-panel`, restart menu looks for `rhlz-panel`, uninstall deletes `raven-hub`. One name: rhlz-panel.</d>
+      <d sev="MED" id="secret-drift">install.sh writes JWT_SECRET (and a weak `rhlz_secret_key_$(date +%s)` fallback). Write RHLZ_SESSION_SECRET from crypto.randomBytes(32). Never weak fallback. Do not clobber an existing .env.</d>
+      <d sev="MED" id="compose-brand">docker-compose.yml image/container still `raven-hub`, requires JWT_SECRET. Align to rhlz-panel + RHLZ_SESSION_SECRET with JWT_SECRET fallback.</d>
+      <d sev="MED" id="vite-host">server.ts Vite allowedHosts hardcoded `gtk.qzz.io`. Use true or env PANEL_ALLOWED_HOSTS.</d>
+      <d sev="MED" id="crash-log">uncaughtException writes stack to cwd/crash.log. Write under .data/logs/crash.log, 0600, no secrets.</d>
+      <d sev="MED" id="chmod-777">Server dirs/jars chmod 0777. Use 0750/0640 owned by the panel user.</d>
+      <d sev="MED" id="uid0">Docker MC containers UID=0 GID=0. Prefer UID/GID of the panel user or 1000.</d>
+      <d sev="MED" id="docs-api-prefix">docs/API.md says API keys use rvn_ prefix. Code uses rhlz_ (rvn_ accepted). Fix the doc.</d>
+      <d sev="MED" id="playit-local">Playit for local runtime is "Coming Soon". Either implement via playit-linux binary sidecar or hide the UI on local runtime instead of dead buttons.</d>
+      <d sev="MED" id="jar-types">jarDownloader only really handles bungee/velocity/forge/fabric/vanilla/spigot/paper. Purpur/Folia/Quilt/NeoForge/Mohist/Arclight advertised in docker.ts but fall through to Paper JAR. Wire real sources or stop advertising.</d>
+      <d sev="MED" id="create-ui-gap">CreateServer UI only offers paper/spigot/fabric/forge/bungeecord/velocity. Backend knows purpur/folia/vanilla/neoforge/quilt/mohist/arclight/waterfall/bukkit. UI must match backend.</d>
+      <d sev="LOW" id="extract-zip">extract-zip GHSA-jmr9-qjv8-65gv — keep app-layer mitigation; replace lib if a patched release exists, else stay on adm-zip path.</d>
+      <d sev="LOW" id="firebase-public">/api/settings returns Firebase web config unauthenticated. Acceptable for Firebase web keys, but never return service-account / session secrets.</d>
+      <d sev="LOW" id="wings-logs">wings.ts logs stub. If Wings provider is unused, document; if used, implement WS log stream or remove from advertised features.</d>
+    </known-defects>
+  </current-state>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       PETALS — workstreams. Bloom P0 first, then P1–P4. Each petal
+       must leave the tree greener than it found it (tests + docs).
+       ═══════════════════════════════════════════════════════════════════ -->
+  <petals>
+
+    <!-- ─────────────── P0  ONE-CLICK  (highest priority) ─────────────── -->
+    <petal id="P0-one-click" priority="0" title="One-click install / update / uninstall / node — zero manual setup">
+      <intent>
+        An operator with a fresh Ubuntu/Debian/Rocky VPS must be able to copy ONE line,
+        walk away, and get a running panel on :6767 with an owner account. No menus,
+        no "press 1", no editing .env by hand, no guessing pm2 names.
+      </intent>
+
+      <cli-contract>
+        <!-- Canonical installer flags. Implement ALL of these. -->
+        <cmd>bash install.sh</cmd>
+        <behavior>
+          If stdin is a TTY and no flags: keep a SHORT menu (compat).
+          If stdin is NOT a TTY (curl|bash) OR `--yes`/`-y`/`RHLZ_NONINTERACTIVE=1`: run production install with defaults, no prompts.
+        </behavior>
+
+        <flags>
+          <f>--yes | -y</f>                    non-interactive production install
+          <f>--dev</f>                         development setup (port 30000, npm run dev ready)
+          <f>--runtime docker|local</f>        default docker
+          <f>--theme red|blue|purple|cyan|green|amber|rose|white</f>
+          <f>--port N</f>                      default 6767 (prod) / 30000 (dev)
+          <f>--admin USER:PASS</f>             create/reset owner (required in non-interactive unless users.json already has an owner)
+          <f>--admin-user U --admin-pass P</f> same, split form
+          <f>--no-java</f>                     skip host OpenJDK (panel still auto-provisions portable JRE)
+          <f>--no-docker</f>                   do not install Docker even if runtime=docker (fail with a clear error if docker missing)
+          <f>--skip-build</f>                  reuse existing dist/ (update-fast)
+          <f>--bind 0.0.0.0</f>                documented default
+        </flags>
+
+        <env-overrides>
+          RHLZ_NONINTERACTIVE=1
+          RHLZ_RUNTIME=docker|local
+          RHLZ_THEME=red
+          RHLZ_PORT=6767
+          RHLZ_ADMIN_USER=admin
+          RHLZ_ADMIN_PASS=...
+          RHLZ_SESSION_SECRET=...   (if unset, generate + persist; write into .env)
+        </env-overrides>
+
+        <one-liners>
+          <panel><![CDATA[
+# Production, fully unattended (copy-paste):
+curl -fsSL https://raw.githubusercontent.com/NggKhaiz/RHLZ-PANEL/main/rhlz-panel/install.sh | bash -s -- --yes --runtime docker --admin admin:ChangeMe_now
+# From a git checkout:
+bash install.sh --yes --runtime docker --admin admin:ChangeMe_now
+          ]]></panel>
+          <update><![CDATA[bash update.sh --yes]]></update>
+          <uninstall><![CDATA[bash uninstall.sh --yes          # keeps .data/
+bash uninstall.sh --yes --purge  # also removes .data/ (double-confirm via --purge)]]></uninstall>
+          <node><![CDATA[curl -fsSL http://<panel>/node.sh | sudo bash -s -- --yes -p 6768]]></node>
+          <docker><![CDATA[
+# From app directory:
+docker compose up -d --build
+# Or:
+docker run -d --name rhlz-panel -p 6767:6767 \
+  -e RHLZ_SESSION_SECRET="$(openssl rand -hex 32)" \
+  -e NODE_ENV=production -e PORT=6767 \
+  -v rhlz-data:/app/.data --restart unless-stopped rhlz-panel
+          ]]></docker>
+        </one-liners>
+      </cli-contract>
+
+      <implement>
+        <step>Refactor install.sh into functions + a non-interactive path. Defaults: runtime=docker, theme=red, port=6767, install Java if missing, install Docker if runtime=docker. Never use `read -p` when NONINTERACTIVE.</step>
+        <step>Detect app root: package.json name rhlz-panel in cwd, OR ./rhlz-panel/, OR clone REPO_URL then enter the directory that actually contains package.json (handle nested repo layout).</step>
+        <step>setup_environment: if .env exists, MERGE missing keys only — never overwrite secrets. Write RHLZ_SESSION_SECRET (and JWT_SECRET=same value for compat). NODE_ENV=production. ENABLE_DOCKER aligned with runtime. PANEL_RUNTIME_LOCKED=true for prod.</step>
+        <step>configure_pm2_service: name `rhlz-panel`. `pm2 delete` raven-hub, raven-panel, rhlz-panel first. Start `dist/server.cjs` with NODE_OPTIONS=--max-old-space-size=96 and PORT. `pm2 save`. Add `@reboot pm2 resurrect` cron if crontab exists. Do NOT run `pm2 startup` (systemd).</step>
+        <step>createuser: already supports `npm run createuser user pass`. In non-interactive, require --admin or RHLZ_ADMIN_*; refuse to finish with zero users (exit 1 with message). Interactive menu may still prompt.</step>
+        <step>update.sh --yes: git pull --ff-only (or fail clearly), npm ci, npm run build, pm2 restart rhlz-panel. Do not `|| true` the build — fail the script if build fails. Preserve .env and .data/.</step>
+        <step>uninstall.sh: stop/delete pm2 rhlz-panel AND legacy names. --yes skips confirm. Default preserve .data/. --purge removes .data/ too.</step>
+        <step>Success banner MUST print the real URL, pm2 name `rhlz-panel`, and the admin username created. Management commands in the banner must work copy-paste (`npx pm2 logs rhlz-panel`).</step>
+        <step>Add scripts/one-click.sh as a 20-line wrapper that execs install.sh --yes "$@".</step>
+        <step>Fix Docker engine install: `curl get.docker.com | sh` then `service docker start` / dockerd fallback; do not depend on systemd succeeding. Add the installing user to group docker.</step>
+        <step>node.sh --yes: Node 22, no systemd, pm2 name rhlz-node, cron @reboot, CORS closed, health on /health, print IP+key ONCE at the end.</step>
+        <step>README + docs/SETUP.md + docs/OPERATOR.md + DocsPage 60-second start: lead with the one-liner, not the menu. Keep the menu as "advanced".</step>
+      </implement>
+
+      <acceptance>
+        <a>curl|bash with --yes on a clean machine exits 0, pm2 show rhlz-panel online, curl -sf localhost:6767/api/health returns product RHLZ, login with --admin creds works.</a>
+        <a>Re-running install.sh --yes does not rotate the session secret or destroy users.</a>
+        <a>bash -n install.sh update.sh uninstall.sh public/node.sh scripts/*.sh is clean.</a>
+        <a>No prompt appears when `script -q -c 'bash install.sh --yes --admin a:b' /dev/null` is run with stdin redirected from /dev/null (except sudo password, which is out of scope).</a>
+      </acceptance>
+    </petal>
+
+    <!-- ─────────────── P1  CONSISTENCY + BUGS ─────────────── -->
+    <petal id="P1-consistency" priority="1" title="Unify names, versions, ports, secrets; fix logic bugs">
+      <work>
+        <item>Single VERSION exported from src/brand.ts; package.json and /api/health consume it (health already can import VERSION — do that). Set 3.1.0.</item>
+        <item>Default listen port 6767 when NODE_ENV=production or PORT unset in prod scripts; 30000 in npm run dev (vite/tsx). Remove silent 3000 default or keep it only if NODE_ENV is unset AND a comment explains it — prefer 6767.</item>
+        <item>Fix isMain guard in server.ts. Never start the HTTP server when TEST_ENV=1 or when imported.</item>
+        <item>Vite allowedHosts from env, default true in dev.</item>
+        <item>Crash log → .data/logs/crash.log.</item>
+        <item>docker-compose.yml: image rhlz-panel, container_name rhlz-panel, RHLZ_SESSION_SECRET with JWT_SECRET fallback so old .env still works.</item>
+        <item>Fly/render/railway/koyeb/qovery/cyclic/Procfile: health paths /api/healthz, secret name RHLZ_SESSION_SECRET (document JWT_SECRET fallback).</item>
+        <item>Power-action 409 guard already exists — add a regression test if missing.</item>
+        <item>CreateServer deploy poller matching by name/port within 120s can false-positive. Match by returned id from POST /servers instead.</item>
+        <item>Generic local spawn splitting startupCommand on whitespace breaks quoted args. Use a small argv parser or sh -c with a allowlisted shell only for docker; for local, prefer execFile with argv array stored on the server record.</item>
+      </work>
+    </petal>
+
+    <!-- ─────────────── P2  SOFTWARE CATALOG ─────────────── -->
+    <petal id="P2-software" priority="2" title="Support more server / language types — advertised = implemented">
+      <rule>If it appears in the Create Server UI, jarDownloader + docker.ts + local.ts + versions API MUST handle it. If a source is unreliable, keep the card but show a tooltip and a working fallback, or remove the card.</rule>
+
+      <minecraft-java implement="must">
+        paper, spigot, bukkit, purpur, folia, vanilla, forge, fabric, neoforge, quilt, mohist, arclight, custom
+      </minecraft-java>
+      <proxies implement="must">velocity, bungeecord, waterfall</proxies>
+      <minecraft-extra implement="should">
+        paper-folia already listed; add geyser/floodgate as optional plugins not as a server type.
+        sponge / magma / catserver — only if a stable download URL exists; otherwise omit from UI.
+      </minecraft-extra>
+      <bedrock implement="should">
+        pocketmine-mp (pmmp/pocketmine-mp docker or php binary), nukkit (jar). Default port 19132 UDP.
+      </bedrock>
+      <other-games implement="should" note="Docker images + default ports + startup. Hide Minecraft-only tabs (worlds/plugins/mods/properties) when type is not MC.">
+        terraria (ryshe/terraria or similar), factorio (factoriotools/factorio),
+        valheim (lloesche/valheim-server), palworld (thijsvanloef/palworld-server-docker),
+        cs2 (if a maintainable image exists — skip if it requires Steam Guard tokens in the panel),
+        rust (didstopia/rust-server) — skip if image quality is poor.
+        Prefer a data-driven catalog src/server/services/softwareCatalog.ts over giant switch statements.
+      </other-games>
+      <app-runtimes implement="must-extend">
+        Existing: nodejs, python, go, rust, cpp, csharp, ruby, php, bash.
+        Add: java (eclipse-temurin), deno, bun, lua, kotlin — only if Docker image + a one-file starter template exist.
+        Sandbox /api/run: keep 13 langs; add deno/bun only if host binary detection is clean.
+      </app-runtimes>
+
+      <catalog-module>
+        Create src/server/services/softwareCatalog.ts exporting:
+        { id, family: minecraft|proxy|bedrock|game|app, name, description, defaultPort,
+          defaultImage, defaultStartup, versionsProvider, jarProvider?,
+          features: { worlds, plugins, mods, properties, rcon, eula } }
+        Frontend CreateServer.tsx MUST import a generated or duplicated (kept in sync) list from
+        src/types/software.ts — one list, two runtimes is how types drift. Prefer importing JSON
+        from a shared src/software.json bundled by both Vite and the server.
+      </catalog-module>
+
+      <jarDownloader>
+        Add Fill API for purpur? Use https://api.purpurmc.org/v2/purpur/{ver}/latest/download
+        Folia: fill.papermc.io/v3/projects/folia
+        Quilt: meta.quiltmc.org
+        NeoForge: maven.neoforged.net
+        Mohist/Arclight: official APIs or remove from UI.
+        Velocity: query fill for latest version, do not hardcode 3.4.0-SNAPSHOT.
+        All downloads go through the existing SSRF guard (do not call axios.get on user URLs without it).
+      </jarDownloader>
+    </petal>
+
+    <!-- ─────────────── P3  CODE QUALITY + PERFORMANCE ─────────────── -->
+    <petal id="P3-quality" priority="3" title="Cleaner, faster, smaller, typed">
+      <work>
+        <item>Split src/server/controllers/servers.ts (~1963 lines) into files: lifecycle, files, plugins, backups, sftp, playit. Keep routes stable.</item>
+        <item>Kill duplicated Node/Python starter templates (copy-pasted in local.ts, docker.ts, servers.ts). One templates/ directory.</item>
+        <item>Replace leftover `any` on request user with an AuthUser type.</item>
+        <item>Remove dockerode verbose request logging in production (PII + noise). Gate behind DEBUG_DOCKER=1.</item>
+        <item>Disk usage for containers currently returns 2.1 fake GB. Compute du -sb of the server dir (cached 15s).</item>
+        <item>Keep gzip, code splitting, 400-line console ring, debounce api_keys last_used_at.</item>
+        <item>npm audit --omit=dev each loop; record in ledger. Do not `npm audit fix` blindly.</item>
+        <item>Lint gate: npm run lint clean. No unused imports.</item>
+      </work>
+    </petal>
+
+    <!-- ─────────────── P4  SECURITY + PENTEST LOOPS ─────────────── -->
+    <petal id="P4-security" priority="1" title="Fix real vulns, then loop OWASP-style">
+      <immediate>
+        Google auth token verify OR disable.
+        Scrub local process env.
+        Per-server RCON password.
+        Drop webhook query secret.
+        Harden node.sh (CORS, Node 22, no systemd, no wildcard).
+        chmod 0750 not 0777; container UID not 0.
+        CSP: consider default-on in production behind reverse proxy, with a documented escape hatch PANEL_CSP=false.
+      </immediate>
+      <reopen>
+        HMAC request signing for rhlz-node: implement a cheap `X-RHLZ-Date` + `X-RHLZ-Sign` hex hmac of METHOD\\nPATH\\nDATE\\nsha256(body). Reject skew > 5 min. This reopens the WONTFIX HMAC row — allowed by this prompt.
+      </reopen>
+      <pentest-protocol>
+        After each security batch, extend docs/PENTEST.md (do not rewrite history) and append rows to docs/SECURITY-LOOP.md starting at n=51.
+        Personas to rotate: appsec, pentest, identity, secrets, code-reviewer, sre.
+        Probes (defensive, no exploits): headers, CORS evil origin, unauth /api/servers, IDOR, path fuzz, brute 429, webhook fail-closed, SSRF metadata IPs, CSRF missing token, sandbox env leak, zip-slip, 2FA replay.
+        Unit tests must cover each fix. Target ≥ 50 tests by end of P4, all green.
+      </pentest-protocol>
+      <forbidden>
+        Do not write exploit PoCs, malware, or attack third-party systems.
+        Do not weaken auth "to make testing easier".
+        Tests may exercise defensive mechanisms with benign payloads only.
+      </forbidden>
+    </petal>
+
+    <!-- ─────────────── P5  DOCS + WEB TUTORIAL ─────────────── -->
+    <petal id="P5-docs" priority="2" title="Docs that match the product; in-app tutorial that teaches one-click">
+      <files-to-keep-in-sync>
+        README.md, docs/INTRO.md, docs/SETUP.md, docs/DEPLOYMENT.md, docs/DOCKER.md,
+        docs/OPERATOR.md, docs/API.md, docs/ARCHITECTURE.md, docs/SECURITY.md,
+        docs/SECURITY-LOOP.md (append), docs/PENTEST.md (append), docs/WONTFIX.md,
+        docs/VERIFICATION.md (refresh gates), src/pages/DocsPage.tsx
+      </files-to-keep-in-sync>
+      <content-rules>
+        Lead every install doc with the one-click command.
+        Document RHLZ_SESSION_SECRET as primary, JWT_SECRET as fallback.
+        Document pm2 name rhlz-panel only.
+        API keys prefix rhlz_ (legacy rvn_ accepted).
+        Software types table = software catalog, not a wish list.
+        /docs in-app page: 60-second start, first server (Paper + Node example), 2FA, nodes one-liner, troubleshooting table.
+        No systemd how-to except "we do not use systemd".
+        English prose. Short. Copy-pasteable commands.
+      </content-rules>
+    </petal>
+
+    <!-- ─────────────── P6  WEB / UX ─────────────── -->
+    <petal id="P6-web" priority="3" title="Panel UX: glass, empty states, software categories, a11y">
+      <work>
+        CreateServer: category tabs Minecraft | Proxy | Bedrock | Games | Apps. Search. Default ports change with type.
+        Hide Worlds/Plugins/Mods/Properties/Players for non-MC types; show a generic "Process" panel instead.
+        Empty states already exist — keep them honest (what to click next).
+        Keyboard: console input, file manager, modal focus trap.
+        reduced-motion respected (intro already is).
+        Do not add stock purple-gradient "AI SaaS" look. Palette stays ink/glass/mint/ember from brand.
+        PlayitTunnel route is missing from App.tsx — either wire /servers/:id playit tab only (already in ServerView) or add the page route. Do not leave an orphan page.
+      </work>
+    </petal>
+
+  </petals>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       LOOPS — how to work. Repeat until gates pass.
+       ═══════════════════════════════════════════════════════════════════ -->
+  <loops>
+    <protocol>
+      Work in vertical slices. One petal-slice per loop:
+      1. Read the relevant files (do not assume this XML is fresher than the tree).
+      2. Patch.
+      3. Add/adjust tests.
+      4. Update the one doc that would otherwise lie.
+      5. Run gates (below). If red, fix in the same loop — do not stack failures.
+      6. Append one honest row to docs/SECURITY-LOOP.md if the slice was security/quality related.
+      7. Stop the loop when the slice's acceptance is met, then start the next.
+    </protocol>
+
+    <bug-logic-loop name="fix-until-green">
+      After P0 and P1, run:
+        npm run lint
+        npm test
+        npm run build
+        bash -n install.sh update.sh uninstall.sh public/node.sh
+      For every failing test: fix the product or the test (never skip).
+      Grep for leftover raven-hub, raven-panel, gtk.qzz.io, RCON_PASSWORD=admin, if (true), rhlz_secret_key_.
+      Grep for TODO/FIXME/Coming Soon — either implement or hide the UI.
+    </bug-logic-loop>
+
+    <security-loop name="owasp-pass" start-row="51">
+      Repeat 3 passes (authz, injection/path/ssrf, session/csrf/headers) even if previous ledger claimed clean.
+      New findings get a PENTEST.md row + a test + a fix + a ledger row. Severity honest.
+    </security-loop>
+  </loops>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       GATES — must be green before declaring a slice done
+       ═══════════════════════════════════════════════════════════════════ -->
+  <gates>
+    <g name="lint">npm run lint</g>
+    <g name="test">npm test  (all pass; do not decrease count)</g>
+    <g name="build">npm run build</g>
+    <g name="shell">bash -n on all shipped scripts</g>
+    <g name="brand">worktree (excl node_modules) has no old product-name strings; pm2 name rhlz-panel everywhere</g>
+    <g name="secret">no placeholder secrets; install.sh has no rhlz_secret_key_ fallback</g>
+    <g name="health">GET /api/health → {status:ok, product:RHLZ, panel:RHLZ Panel, version: matches brand.ts}</g>
+    <g name="one-click-dry">install.sh --help (or --yes --help) prints flags; missing --admin in non-interactive with empty users.json exits non-zero</g>
+    <g name="systemd">grep -ri systemd only hits negations + docker API field system_cpu_usage</g>
+  </gates>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       EXECUTION ORDER for the agent that receives this file
+       ═══════════════════════════════════════════════════════════════════ -->
+  <execution>
+    <order>
+      <i n="1">P0 one-click installer/updater/uninstaller/node.sh/compose names. This unblocks every operator.</i>
+      <i n="2">P1 consistency bugs (isMain, versions, ports, secrets, env bleed, RCON, google auth, webhook query).</i>
+      <i n="3">P4 security items that are already listed as HIGH — do not defer them behind features.</i>
+      <i n="4">P2 software catalog + CreateServer UI sync + jarDownloader sources.</i>
+      <i n="5">P5 docs + DocsPage rewrite around one-click.</i>
+      <i n="6">P3 split god-files / templates / fake disk stats.</i>
+      <i n="7">P6 UX polish.</i>
+      <i n="8">Final verification: refresh docs/VERIFICATION.md gates; append CHANGELOG; bump VERSION 3.1.0.</i>
+    </order>
+    <definition-of-done>
+      A stranger can `curl … | bash -s -- --yes --admin admin:pass` on Ubuntu 22.04,
+      open http://IP:6767, log in, enable 2FA, deploy Paper 1.21.1 and a Node app,
+      open the console, upload a file, without reading anything except the success banner.
+      npm test green. No HIGH defects from known-defects remaining (extract-zip residual allowed if still unpatched upstream).
+    </definition-of-done>
+  </execution>
+
+  <operator-note xml:lang="vi">
+    File này là Skill Flower RHLZ — prompt XML để agent tiếp tục code.
+    Ưu tiên số 1: câu lệnh one-click (install/update/uninstall/node) không cần bấm menu.
+    Đưa nguyên file cho agent và nói: "Execute Skill Flower RHLZ. Start at petal P0."
+  </operator-note>
+
+</skill>
