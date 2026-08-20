@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: raven-hub
+    name: rhlz-panel
     runtime: node
     plan: free
     buildCommand: npm ci --no-audit --no-fund && npm run build

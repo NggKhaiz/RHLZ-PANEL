@@ -1,5 +1,5 @@
 # fly.toml — RHLZ Panel on Fly.io (no systemd; fly manages the process)
-app = "raven-hub"
+app = "rhlz-panel"
 primary_region = "sin"
 
 [build]

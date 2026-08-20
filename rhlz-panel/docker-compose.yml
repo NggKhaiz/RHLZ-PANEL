@@ -1,15 +1,16 @@
 services:
   panel:
     build: .
-    image: raven-hub:latest
-    container_name: raven-hub
+    image: rhlz-panel:latest
+    container_name: rhlz-panel
     restart: unless-stopped
     ports:
       - "6767:6767"
     environment:
       NODE_ENV: production
       PORT: 6767
-      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      RHLZ_SESSION_SECRET: ${RHLZ_SESSION_SECRET:-${JWT_SECRET:-}}
+      JWT_SECRET: ${JWT_SECRET:-}
       JWT_EXPIRES: ${JWT_EXPIRES:-24h}
       PANEL_CORS_ORIGINS: ${PANEL_CORS_ORIGINS:-}
       GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}

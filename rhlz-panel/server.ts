@@ -146,7 +146,9 @@ io.on("connection", (socket) => {
   });
 });
 
-const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+const PORT = process.env.PORT
+  ? parseInt(process.env.PORT, 10)
+  : (process.env.NODE_ENV === "production" ? 6767 : 6767);
 
 // Sane JSON body limits (upload bodies are handled by multer, not express.json).
 app.use(express.json({
@@ -174,7 +176,7 @@ app.use((_req, res, next) => {
   res.setHeader("X-Frame-Options", "DENY");
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
   res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
-  if (isProduction() && process.env.PANEL_CSP === "true") {
+  if (isProduction() && process.env.PANEL_CSP !== "false") {
     res.setHeader(
       "Content-Security-Policy",
       "default-src 'self'; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' ws: wss:; script-src 'self' 'unsafe-inline'; frame-ancestors 'none'"
@@ -231,7 +233,12 @@ async function startServer() {
     // Dev-only: vite is loaded lazily so the production bundle stays lean.
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
-      server: { middlewareMode: true, allowedHosts: ["gtk.qzz.io"] },
+      server: {
+        middlewareMode: true,
+        allowedHosts: process.env.PANEL_ALLOWED_HOSTS
+          ? process.env.PANEL_ALLOWED_HOSTS.split(",").map((h) => h.trim()).filter(Boolean)
+          : true,
+      },
       appType: "spa",
     });
     app.use(vite.middlewares);
@@ -253,14 +260,12 @@ async function startServer() {
 
 
 
-// Only start server if not imported as a module in tests
-const isMain = 
-  (typeof require !== 'undefined' && require.main === module) || 
-  (process.argv[1] && process.argv[1].includes('server.ts')) ||
-  (process.argv[1] && process.argv[1].includes('server.cjs'));
+const isMain = process.env.TEST_ENV !== "1" && (
+  (typeof require !== "undefined" && typeof module !== "undefined" && (require as any).main === module) ||
+  Boolean(process.argv[1] && /(?:^|[\\/])server\.(ts|cjs|js)$/.test(process.argv[1]))
+);
 
-console.log("IS MAIN:", isMain, "TEST_ENV:", process.env.TEST_ENV);
-if (true) {
+if (isMain) {
   startServer();
 }
 

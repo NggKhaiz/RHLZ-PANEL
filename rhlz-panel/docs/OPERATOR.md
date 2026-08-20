@@ -23,7 +23,7 @@ docker compose restart
 ## Update
 
 ```bash
-bash update.sh        # pull + npm ci + build + restart (no systemd)
+bash update.sh --yes        # pull + npm ci + build + restart (no systemd)
 ```
 
 The GitHub webhook (`/api/webhook/github-update`) is disabled unless
@@ -43,7 +43,7 @@ Per-server backups: create them in the UI (Server → Backups) or via
 
 ## Add a node
 
-1. On the worker VPS (root): `bash <(curl -fsSL http://<panel>/node.sh)`
+1. On the worker VPS (root): `curl -fsSL http://<panel>/node.sh | sudo bash -s -- --yes -p 6768`
    (installs the `rhlz-node` agent to `/opt/rhlz-node`, port 6768).
 2. In the panel: **Nodes → Add** with the printed IP and node key.
 3. Create servers on that node via the deploy wizard.

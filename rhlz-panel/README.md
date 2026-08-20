@@ -15,7 +15,7 @@ Welcome to **RHLZ** (panel UI: **RHLZ Panel**) — a production
 game-server management and container-orchestration platform built for
 Minecraft and generic game servers.
 
-**Version:** `3.0.0` · **Tagline:** Command the flock. Rule your servers.
+**Version:** `3.1.0` · **Tagline:** Compact control plane for game servers and jailed code runtimes.
 **Security core:** Cypher
 
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178c6?logo=typescript&logoColor=white)
@@ -47,27 +47,30 @@ Minecraft and generic game servers.
 
 ## 📦 Quick Installation
 
-Run the automated installer on your VPS / Linux machine:
-```bash
-bash install.sh
-```
-This opens an interactive menu that sets up all dependencies (Node.js, Docker, Java runtimes, firewall rules) and creates your initial Administrator credentials.
+Unattended production install:
 
-> **Security note:** production refuses to boot without a strong `JWT_SECRET`
-> (see `.env.example`). Existing installs with `rhlz-`/`rhlz_` API keys and
-> `.data/` files remain fully supported.
+```bash
+curl -fsSL https://raw.githubusercontent.com/NggKhaiz/RHLZ-PANEL/main/rhlz-panel/install.sh | bash -s -- --yes --runtime docker --admin admin:ChangeMe_now
+# or from a checkout:
+bash install.sh --yes --runtime docker --admin admin:ChangeMe_now
+```
+
+Interactive menu (TTY, no flags): `bash install.sh`. Flags: `--help`.
+
+> **Security:** set `RHLZ_SESSION_SECRET` (or `JWT_SECRET` fallback). The installer generates a 32-byte secret and never overwrites an existing `.env`.
 
 ---
 
 ## 🔄 Updating
 ```bash
-bash update.sh
+bash update.sh --yes
 ```
 
 ## 🗑️ Uninstallation
 Uninstall while safely preserving your game server worlds and files in `.data/`:
 ```bash
-bash uninstall.sh
+bash uninstall.sh --yes          # keeps .data/
+bash uninstall.sh --yes --purge  # also removes .data/
 ```
 
 ---

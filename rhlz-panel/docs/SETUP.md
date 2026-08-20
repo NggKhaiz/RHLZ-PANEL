@@ -36,11 +36,13 @@ curl --version
 ### One-command installer (recommended)
 
 ```bash
-# run as a user with sudo (or root)
-bash <(curl -fsSL https://your-distribution.example/install.sh)
-# or, from a local checkout:
-bash install.sh
+# Production, unattended (copy-paste):
+curl -fsSL https://raw.githubusercontent.com/NggKhaiz/RHLZ-PANEL/main/rhlz-panel/install.sh | bash -s -- --yes --runtime docker --admin admin:ChangeMe_now
+# From a git checkout:
+bash install.sh --yes --runtime docker --admin admin:ChangeMe_now
 ```
+
+Interactive menu (TTY only, no flags): `bash install.sh`.
 
 The installer:
 
@@ -51,16 +53,15 @@ The installer:
 4. Asks for the **accent theme** (red, blue, purple, cyan, green, amber, rose,
    white).
 5. Builds the production bundle (`npm run build` → `dist/server.cjs`).
-6. Registers a **pm2** service named `raven-hub` (legacy `rhlz-panel` installs
-   are detected and migrated).
+6. Registers a **pm2** service named `rhlz-panel` (legacy `raven-hub` / `raven-panel` names are deleted).
 7. Walks you through creating the **primary owner account**.
 
 ### Manual installation
 
 ```bash
-git clone <your-repo-url> raven-hub && cd raven-hub
+git clone https://github.com/NggKhaiz/RHLZ-PANEL.git && cd RHLZ-PANEL/rhlz-panel
 npm install --no-audit --no-fund
-cp .env.example .env          # then edit (see §3)
+# installer writes .env; or set RHLZ_SESSION_SECRET yourself
 npm run build
 node dist/server.cjs          # or: npm start
 ```
@@ -73,7 +74,7 @@ node dist/server.cjs          # or: npm start
 |---|---|---|
 | `PORT` | `6767` | Panel HTTP port (production) |
 | `NODE_ENV` | — | `production` for deploy; dev otherwise |
-| `JWT_SECRET` | *auto* | Signing secret. If missing, Cypher generates a random one, persists it to `.data/secret` (0600) and warns. **Set it explicitly in production.** |
+| `RHLZ_SESSION_SECRET` | *auto* | Primary signing secret. Fallback `JWT_SECRET`. If both missing, Cypher generates one and persists `.data/secret` (0600). |
 | `JWT_EXPIRES` | `24h` | Access-token lifetime (`1h`, `8h`, `1d`…) |
 | `GITHUB_WEBHOOK_SECRET` | unset | Enables the guarded `/api/webhook/github-update` auto-update hook. Unset = webhook disabled (fail-closed). |
 | `PANEL_CORS_ORIGINS` | empty | Comma-separated allowed origins for API + Socket.IO (same-origin always allowed). |
@@ -99,31 +100,32 @@ npm run build
 pm2 start scripts/start-with-update.sh --name rhlz-panel   # auto-update on restart
 # or plain:
 NODE_OPTIONS=--max-old-space-size=96 pm2 start dist/server.cjs --name rhlz-panel
-pm2 save && pm2 startup     # follow the printed command
+pm2 save
+# persistence: crontab `@reboot pm2 resurrect` (we do not use systemd for the panel)
 ```
 
 ### Production (supervisord — no systemd required)
 
 ```ini
-# /etc/supervisor/conf.d/raven-hub.conf
-[program:raven-hub]
-directory=/opt/raven-hub
+# /etc/supervisor/conf.d/rhlz-panel.conf
+[program:rhlz-panel]
+directory=/opt/rhlz-panel
 command=/usr/bin/node dist/server.cjs
-environment=NODE_ENV="production",PORT="6767",JWT_SECRET="<your-secret>",NODE_OPTIONS="--max-old-space-size=96"
+environment=NODE_ENV="production",PORT="6767",RHLZ_SESSION_SECRET="<your-secret>",NODE_OPTIONS="--max-old-space-size=96"
 autostart=true
 autorestart=true
 startretries=5
 stopasgroup=true
 killasgroup=true
-stdout_logfile=/var/log/raven-hub.out.log
-stderr_logfile=/var/log/raven-hub.err.log
+stdout_logfile=/var/log/rhlz-panel.out.log
+stderr_logfile=/var/log/rhlz-panel.err.log
 ```
 
 ```bash
-sudo supervisorctl reread && sudo supervisorctl update && sudo supervisorctl start raven-hub
+sudo supervisorctl reread && sudo supervisorctl update && sudo supervisorctl start rhlz-panel
 ```
 
-> Prefer **Docker**: `docker run -d --name raven-hub -p 6767:6767 -v /opt/raven-hub/.data:/app/.data your-registry/raven-hub` — restart policies are handled by the container runtime, no init system involved.
+> Prefer **Docker**: `docker compose up -d --build` or `docker run -d --name rhlz-panel -p 6767:6767 -e RHLZ_SESSION_SECRET="$(openssl rand -hex 32)" -e NODE_ENV=production -e PORT=6767 -v rhlz-data:/app/.data --restart unless-stopped rhlz-panel`
 
 ### Development
 
@@ -157,9 +159,9 @@ Caddy auto-provisions Let's Encrypt certificates and forwards the client IP
 |---|---|
 | `Refusing to boot: JWT_SECRET is missing…` (legacy behavior) | Now auto-generates — or set `JWT_SECRET` in `.env` |
 | Panel boots but console sockets fail | Check `PANEL_CORS_ORIGINS` includes your origin; verify `X-Request-Id` header appears (proves the app is serving) |
-| Docker servers stuck "creating" | `systemctl status docker`; ensure the panel user is in the `docker` group (`sudo usermod -aG docker $USER`) |
+| Docker servers stuck "creating" | `docker info` / `service docker start`; ensure the panel user is in the `docker` group (`sudo usermod -aG docker $USER`) |
 | Port already in use | `ss -ltnp | grep 6767`; change `PORT` |
-| Updates not applying | `pm2 logs raven-hub`; the webhook is disabled unless `GITHUB_WEBHOOK_SECRET` is set |
+| Updates not applying | `npx pm2 logs rhlz-panel`; the webhook is disabled unless `GITHUB_WEBHOOK_SECRET` is set |
 | Data files corrupt after a crash | The panel self-heals from `.data/*.json.bak` on boot; keep backups |
 | Forgot owner password | `npm run createuser admin newpass` |
 | Uninstall | `bash uninstall.sh` (preserves `.data/`) |

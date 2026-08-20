@@ -1,6 +1,6 @@
 # Qovery — RHLZ Panel
 application:
-  name: raven-hub
+  name: rhlz-panel
   build_mode: DOCKER
   dockerfile_path: Dockerfile
   environment_variables:

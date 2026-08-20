@@ -7,12 +7,12 @@ Base URL: `http://<panel-host>:<port>/api` · JSON bodies · Bearer auth unless 
 - **Login** — `POST /auth/login` `{username, password}` → `{token, user}`.
   Rate-limited (per-IP + per-account, progressive lockout).
 - **Register** — `POST /auth/register` (disabled when `enableRegistration=false`).
-- **Google** — `POST /auth/google` `{email, googleId, name, photoURL}`.
+- **Google** — `POST /auth/google` `{idToken, email}` (ID token verified server-side; client-only googleId is rejected).
 - **Me** — `GET /auth/me` (Bearer) → current user.
 - **Users (admin)** — `GET /auth/users`.
 
 ### API keys
-Created in **Admin → API Keys** with the `rvn_` prefix (legacy `rhlz-`/`rhlz_`
+Created in **Admin → API Keys** with the `rhlz_` prefix (legacy `rvn_`
 keys remain valid). Send as `Authorization: Bearer <key>`. Keys are stored as
 SHA-256 hashes, verified in constant time, and are **fail-closed on scope**:
 a key must declare `*` (full), `read`, `write`, `server`, or `admin` scope or

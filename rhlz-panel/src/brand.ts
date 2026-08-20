@@ -19,7 +19,7 @@ export const PANEL_UI_NAME = "RHLZ Panel";
 export const FAMILY_NAME = "RHLZ";
 export const SHORT_CODE = "rhlz";
 export const SECURITY_CORE = "RHLZ Secure Core";
-export const VERSION = "1.0.0";
+export const VERSION = "3.1.0";
 export const TAGLINE = "Compact control plane for game servers and jailed code runtimes.";
 export const COPYRIGHT = "© 2026 RHLZ. All rights reserved.";
 /** API keys are minted with this prefix; rvn_ (previous-generation) keys stay valid. */

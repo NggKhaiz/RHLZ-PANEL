@@ -1,5 +1,11 @@
 # RHLZ — CHANGELOG (cumulative ledger)
 
+## 3.1.0 — One-click + consistency + HIGH security
+- Unattended installer (`install.sh --yes`), `update.sh --yes`, `uninstall.sh --yes [--purge]`, `scripts/one-click.sh`.
+- PM2 name `rhlz-panel`; secrets `RHLZ_SESSION_SECRET`; version `3.1.0` from `src/brand.ts`.
+- isMain guard; crash log `.data/logs/crash.log`; Vite `allowedHosts` true; compose `rhlz-panel`.
+- Google ID-token verify; scrubbed local spawn env; per-server RCON; webhook no query secret; node.sh Node 22 + CORS deny + HMAC.
+
 ## 2FA sprint — TOTP two-factor authentication (adopted from reference analysis)
 - **TOTP 2FA** (`otpauth` + `qrcode`): setup (secret + QR + 10 single-use recovery codes),
   verify-enable, disable, and a two-step login (`twoFactorRequired` → short-lived `2fa`-scope
